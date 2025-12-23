@@ -1,11 +1,14 @@
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import dotenv from "dotenv";
+import  "dotenv/congig";
 import { User } from "./model/users.js";
 import { authMiddleware } from "./middleware/authMiddleware.js";
+import nodemailer from "nodemailer";
 
 dotenv.config();
 const app = express();
@@ -22,6 +25,17 @@ app.use(
     credentials: true,
   })
 );
+
+
+const transporter = nodemailer.createTransport({
+  host: "smtp.mail.yahoo.com",
+  port: 465,
+  secure: true,
+  auth: {
+    user: "your_yahoo_email@yahoo.com",
+    pass: "your_yahoo_app_password"
+  }
+});
 
 app.use(express.json());
 
@@ -100,6 +114,39 @@ app.get("/api/users", authMiddleware, async (req, res) => {
     res.status(200).json(users);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/forget-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+
+    user.resetOTP = otp;
+    await user.save();
+
+    // SEND REAL EMAIL
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "Password Reset OTP",
+      text: `Your OTP is ${otp}. It expires in 10 minutes.`
+    });
+
+    res.json({
+      success: true,
+      message: "OTP sent to your email"
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
