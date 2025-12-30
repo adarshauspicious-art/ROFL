@@ -5,12 +5,13 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import dotenv from "dotenv";
-import  "dotenv/congig";
+import 'dotenv/config';
 import { User } from "./model/users.js";
 import { authMiddleware } from "./middleware/authMiddleware.js";
 import nodemailer from "nodemailer";
 
 dotenv.config();
+
 const app = express();
 app.use(
   cors({
@@ -28,14 +29,13 @@ app.use(
 
 
 const transporter = nodemailer.createTransport({
-  host: "smtp.mail.yahoo.com",
-  port: 465,
-  secure: true,
+  service: 'gmail',  // Gmail service (Nodemailer will use the correct SMTP host/port)
   auth: {
-    user: "your_yahoo_email@yahoo.com",
-    pass: "your_yahoo_app_password"
+    user: process.env.EMAIL_USER,  // Your Gmail address
+    pass: process.env.EMAIL_PASS   // Your Gmail app password
   }
 });
+
 
 app.use(express.json());
 
@@ -117,6 +117,7 @@ app.get("/api/users", authMiddleware, async (req, res) => {
   }
 });
 
+
 app.post("/forget-password", async (req, res) => {
   try {
     const { email } = req.body;
@@ -127,26 +128,70 @@ app.post("/forget-password", async (req, res) => {
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
+    console.log("Generated OTP:", otp); // Log OTP
 
     user.resetOTP = otp;
     await user.save();
+    console.log("User after saving OTP:", user); // Log the user object
 
     // SEND REAL EMAIL
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
-      subject: "Password Reset OTP",
-      text: `Your OTP is ${otp}. It expires in 10 minutes.`
+      subject: "ROFL Password Reset OTP",
+      text: `Your One-Time Password (OTP) for verifying the email is ${otp}. Please note, this OTP will expire in 10 minutes`
     });
+
+    console.log("Email sent successfully:", info.response);
 
     res.json({
       success: true,
       message: "OTP sent to your email"
     });
   } catch (error) {
-    console.error(error);
+    console.error("Error:", error);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.post("/verify-otp", async (req, res) => {
+  try {
+    const { email, otp } = req.body; // Get the email and OTP from the request body
+
+    // Step 1: Find the user by email
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Step 2: Check if the OTP is correct
+    if (user.resetOTP !== otp) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    // Step 3: Check if the OTP has expired (assuming OTP is valid for 10 minutes)
+    const otpExpirationTime = 10 * 60 * 1000; // 10 minutes in milliseconds
+    const currentTime = Date.now();
+    const otpGeneratedTime = user.otpGeneratedAt; // The time when OTP was generated (you need to store this)
+
+    // If the OTP has expired
+    if (currentTime - otpGeneratedTime > otpExpirationTime) {
+      return res.status(400).json({ message: "OTP has expired" });
+    }
+
+    // Step 4: OTP is valid and not expired
+    res.json({
+      success: true,
+      message: "OTP verified successfully",
+    });
+
+    // Optionally, you can clear the OTP after successful verification
+    user.resetOTP = null;  // Clear OTP from the database after verification
+    await user.save();
+
+  } catch (error) {
+    console.error("Error in /verify-otp:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 });
 
