@@ -5,7 +5,7 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import dotenv from "dotenv";
-import 'dotenv/config';
+import "dotenv/config";
 import { User } from "./model/users.js";
 import { authMiddleware } from "./middleware/authMiddleware.js";
 import nodemailer from "nodemailer";
@@ -27,15 +27,13 @@ app.use(
   })
 );
 
-
 const transporter = nodemailer.createTransport({
-  service: 'gmail',  // Gmail service (Nodemailer will use the correct SMTP host/port)
+  service: "gmail", // Gmail service (Nodemailer will use the correct SMTP host/port)
   auth: {
-    user: process.env.EMAIL_USER,  // Your Gmail address
-    pass: process.env.EMAIL_PASS   // Your Gmail app password
-  }
+    user: process.env.EMAIL_USER, // Your Gmail address
+    pass: process.env.EMAIL_PASS, // Your Gmail app password
+  },
 });
-
 
 app.use(express.json());
 
@@ -80,7 +78,7 @@ app.post("/register", async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = await User.create({
-      name:`${firstName} ${lastName}`,
+      name: `${firstName} ${lastName}`,
       email,
       password: hashedPassword,
     });
@@ -94,14 +92,13 @@ app.post("/register", async (req, res) => {
 
     res.status(201).json({
       message: "User created successfully",
-      
-        token,
-        user: {
-          id: newUser._id,
-          name: newUser.name,
-          email: newUser.email,
-        },
-      
+
+      token,
+      user: {
+        id: newUser._id,
+        name: newUser.name,
+        email: newUser.email,
+      },
     });
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message });
@@ -117,7 +114,6 @@ app.get("/api/users", authMiddleware, async (req, res) => {
   }
 });
 
-
 app.post("/forget-password", async (req, res) => {
   try {
     const { email } = req.body;
@@ -128,9 +124,11 @@ app.post("/forget-password", async (req, res) => {
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
     console.log("Generated OTP:", otp); // Log OTP
 
     user.resetOTP = otp;
+    user.otpGeneratedAt = new Date();
     await user.save();
     console.log("User after saving OTP:", user); // Log the user object
 
@@ -138,15 +136,37 @@ app.post("/forget-password", async (req, res) => {
     const info = await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
-      subject: "ROFL Password Reset OTP",
-      text: `Your One-Time Password (OTP) for verifying the email is ${otp}. Please note, this OTP will expire in 10 minutes`
+      subject: "Your ROFL Password Reset Code",
+      html: `
+    <div style="font-family: Arial, sans-serif; line-height:1.6; color:#333; max-width:600px; margin:auto; padding:20px; border:1px solid #e0e0e0; border-radius:8px;">
+      
+      <h2 style="color:#1a73e8;">Hello ${user.name} ,</h2>
+      
+      <p>We received a request to reset the password for your ROFL account. Use the OTP below to verify your identity and reset your password:</p>
+      
+      <div style="background:#f4f4f4; padding:15px; border-radius:5px; text-align:center; font-size:24px; font-weight:bold; margin:20px 0;">
+        ${otp}
+      </div>
+      
+      <p>This OTP will expire in <strong>10 minutes</strong>.</p>
+      
+      <p>If you did not request a password reset, please ignore this email. Your account is safe.</p>
+      
+      <hr style="border:none; border-top:1px solid #e0e0e0; margin:20px 0;">
+      
+      <p style="font-size:12px; color:#777;">For your security, never share your OTP with anyone. ROFL will never ask for your password or OTP over email.</p>
+      
+      <p style="margin-top:20px;">Thanks,<br/>
+      The ROFL Team</p>
+    </div>
+  `,
     });
 
     console.log("Email sent successfully:", info.response);
 
     res.json({
       success: true,
-      message: "OTP sent to your email"
+      message: "OTP sent to your email",
     });
   } catch (error) {
     console.error("Error:", error);
@@ -156,44 +176,81 @@ app.post("/forget-password", async (req, res) => {
 
 app.post("/verify-otp", async (req, res) => {
   try {
-    const { email, otp } = req.body; // Get the email and OTP from the request body
+    const { email, otp } = req.body;
 
-    // Step 1: Find the user by email
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP are required" });
     }
 
-    // Step 2: Check if the OTP is correct
-    if (user.resetOTP !== otp) {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (String(user.resetOTP) !== String(otp)) {
       return res.status(400).json({ message: "Invalid OTP" });
     }
 
-    // Step 3: Check if the OTP has expired (assuming OTP is valid for 10 minutes)
-    const otpExpirationTime = 10 * 60 * 1000; // 10 minutes in milliseconds
-    const currentTime = Date.now();
-    const otpGeneratedTime = user.otpGeneratedAt; // The time when OTP was generated (you need to store this)
+    if (!user.otpGeneratedAt) {
+      return res.status(400).json({ message: "OTP generation time missing" });
+    }
 
-    // If the OTP has expired
-    if (currentTime - otpGeneratedTime > otpExpirationTime) {
+    if (Date.now() - new Date(user.otpGeneratedAt).getTime() > 10 * 60 * 1000) {
       return res.status(400).json({ message: "OTP has expired" });
     }
 
-    // Step 4: OTP is valid and not expired
-    res.json({
-      success: true,
-      message: "OTP verified successfully",
-    });
-
-    // Optionally, you can clear the OTP after successful verification
-    user.resetOTP = null;  // Clear OTP from the database after verification
+    user.resetOTP = null;
+    user.otpGeneratedAt = null;
     await user.save();
+
+    res.json({ success: true, message: "OTP verified successfully" });
 
   } catch (error) {
     console.error("Error in /verify-otp:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 });
+
+app.post("/reset-password", async (req, res) => {
+  try {
+    const { email, password, confirmPassword } = req.body;
+
+    if (!email || !password || !confirmPassword) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({ message: "Passwords do not match" });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ message: "Password must be at least 8 characters" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const isSame = await bcrypt.compare(password, user.password);
+    if (isSame) {
+      return res.status(400).json({ message: "New password must be different from old password" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    user.password = hashedPassword;
+
+    // Optional cleanup fields
+    user.resetOTP = null;
+    user.otpGeneratedAt = null;
+
+    await user.save();
+
+    return res.json({ success: true, message: "Password reset successful" });
+
+  } catch (error) {
+    console.error("Reset password error:", error);
+    return res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+
 
 app.post("/login", async (req, res) => {
   try {
@@ -228,24 +285,20 @@ app.post("/login", async (req, res) => {
       httpOnly: true,
       secure: false,
       sameSite: "strict",
-      path: "/",         
+      path: "/",
     });
-
-    
 
     // If successful then
     res.status(200).json({
       message: "Login successful",
-      
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-        },
-      
-    });
 
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+    });
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message });
   }
