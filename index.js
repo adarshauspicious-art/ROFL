@@ -1,7 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
-import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import dotenv from "dotenv";
@@ -9,6 +8,19 @@ import "dotenv/config";
 import { User } from "./model/users.js";
 import { authMiddleware } from "./middleware/authMiddleware.js";
 import nodemailer from "nodemailer";
+import multer from "multer";
+
+
+
+//=========================================================================================================================
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+//=======================================================================================================================
+
 
 dotenv.config();
 
@@ -17,13 +29,6 @@ app.use(
   cors({
     origin: "http://localhost:3000", // frontend URL
     credentials: true, // important for cookies
-  })
-);
-
-app.use(
-  cors({
-    origin: "http://localhost:3000",
-    credentials: true,
   })
 );
 
@@ -36,6 +41,7 @@ const transporter = nodemailer.createTransport({
 });
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Log incoming requests for debugging
 app.use((req, res, next) => {
@@ -44,9 +50,51 @@ app.use((req, res, next) => {
 });
 
 mongoose
-  .connect("mongodb://127.0.0.1:27017/rofl")
-  .then(() => console.log("MongoDB Connected 🚀"))
-  .catch((err) => console.log(err));
+.connect("mongodb://127.0.0.1:27017/rofl")
+.then(() => console.log("MongoDB Connected 🚀"))
+.catch((err) => console.log(err));
+
+
+
+//=========================================================================================================================
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+
+  const uploadDir = "uploads";
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
+
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + "-" + file.originalname);
+  }
+});
+
+// ========================
+// IMAGE ONLY FILTER
+// ========================
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith("image")) {
+    cb(null, true);
+  } else {
+    cb(new Error("Only image files are allowed!"), false);
+  }
+};
+
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 2 * 1024 * 1024 } // 2MB
+});
+//=========================================================================================================================
+
+
 
 app.get("/", (req, res) => {
   res.send("ROFL  Backend is running! 🚀");
@@ -202,7 +250,6 @@ app.post("/verify-otp", async (req, res) => {
     await user.save();
 
     res.json({ success: true, message: "OTP verified successfully" });
-
   } catch (error) {
     console.error("Error in /verify-otp:", error);
     res.status(500).json({ message: "Server error", error: error.message });
@@ -222,7 +269,9 @@ app.post("/reset-password", async (req, res) => {
     }
 
     if (password.length < 8) {
-      return res.status(400).json({ message: "Password must be at least 8 characters" });
+      return res
+        .status(400)
+        .json({ message: "Password must be at least 8 characters" });
     }
 
     const user = await User.findOne({ email });
@@ -230,7 +279,9 @@ app.post("/reset-password", async (req, res) => {
 
     const isSame = await bcrypt.compare(password, user.password);
     if (isSame) {
-      return res.status(400).json({ message: "New password must be different from old password" });
+      return res
+        .status(400)
+        .json({ message: "New password must be different from old password" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -243,12 +294,56 @@ app.post("/reset-password", async (req, res) => {
     await user.save();
 
     return res.json({ success: true, message: "Password reset successful" });
-
   } catch (error) {
     console.error("Reset password error:", error);
-    return res.status(500).json({ message: "Server error", error: error.message });
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message });
   }
 });
+
+
+
+// ======================================================================================================================
+
+// Upload single image
+app.post("/upload", upload.single("image"), (req, res) => {
+  res.json({
+    message: "Image uploaded successfully",
+    fileName: req.file.filename,
+    fileUrl: `http://localhost:3000/uploads/${req.file.filename}`
+  });
+});
+
+// Upload multiple images
+app.post("/upload-multiple", upload.array("images", 3), (req, res) => {
+  res.json({
+    message: "Images uploaded successfully",
+    files: req.files.map(file => ({
+      fileName: file.filename,
+      fileUrl: `http://localhost:3000/uploads/${file.filename}`
+    }))
+  });
+});
+
+// ========================
+// ERROR HANDLER (MULTER + GENERAL)
+// ========================
+app.use((err, req, res, next) => {
+  res.status(400).json({
+    error: err.message
+  });
+});
+// i have tried to upload the photo but its not working right now at the movement 
+
+//============================================================================================================================================
+
+
+
+
+
+
+
 
 app.post("/login", async (req, res) => {
   try {
@@ -311,6 +406,9 @@ app.post("/logout", (req, res) => {
   });
   res.status(200).json({ message: "Logged out successfully" });
 });
+
+
+
 
 //    Server Listening
 app.listen(5000, () => {
