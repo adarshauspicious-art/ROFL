@@ -57,21 +57,19 @@ mongoose
 
 
 //=========================================================================================================================
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-
-  const uploadDir = "uploads";
+const uploadDir = "uploads";
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
 
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);
   },
-  filename: (req, file, cb) => {
+  filename:  (req, file, cb) => {
     cb(null, Date.now() + "-" + file.originalname);
   }
 });
@@ -308,6 +306,9 @@ app.post("/reset-password", async (req, res) => {
 
 // Upload single image
 app.post("/upload", upload.single("image"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'No file uploaded' });
+  }
   res.json({
     message: "Image uploaded successfully",
     fileName: req.file.filename,
@@ -315,16 +316,17 @@ app.post("/upload", upload.single("image"), (req, res) => {
   });
 });
 
+
 // Upload multiple images
-app.post("/upload-multiple", upload.array("images", 3), (req, res) => {
-  res.json({
-    message: "Images uploaded successfully",
-    files: req.files.map(file => ({
-      fileName: file.filename,
-      fileUrl: `http://localhost:3000/uploads/${file.filename}`
-    }))
-  });
-});
+// app.post("/upload-multiple", upload.array("images", 3), (req, res) => {
+//   res.json({
+//     message: "Images uploaded successfully",
+//     files: req.files.map(file => ({
+//       fileName: file.filename,
+//       fileUrl: `http://localhost:3000/uploads/${file.filename}`
+//     }))
+//   });
+// });
 
 // ========================
 // ERROR HANDLER (MULTER + GENERAL)
