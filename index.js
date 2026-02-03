@@ -1,30 +1,35 @@
+import dotenv from "dotenv";
+dotenv.config();
 import express from "express";
+import multer from "multer";  
+import { v2 as cloudinary } from "cloudinary";
 import mongoose from "mongoose";
 import cors from "cors";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
-import dotenv from "dotenv";
-import "dotenv/config";
-import { User } from "./model/users.js";
 import { authMiddleware } from "./middleware/authMiddleware.js";
 import nodemailer from "nodemailer";
-import multer from "multer";
+import crypto from "crypto";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
+import { User } from "./model/users.js";
+
 
 
 
 //=========================================================================================================================
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 
+
+console.log("Cloudinary config:", cloudinary.config()); 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 //=======================================================================================================================
 
 
-dotenv.config();
 
 const app = express();
+app.use(express.json());
 app.use(
   cors({
     origin: "http://localhost:3000", // frontend URL
@@ -32,15 +37,14 @@ app.use(
   })
 );
 
-const transporter = nodemailer.createTransport({
+const transporter = nodemailer.createTransport({          //    NODEMAILER TRANSPORTER
   service: "gmail", // Gmail service (Nodemailer will use the correct SMTP host/port)
   auth: {
-    user: process.env.EMAIL_USER, // Your Gmail address
+    user: process.env.EMAaIL_USER, // Your Gmail address
     pass: process.env.EMAIL_PASS, // Your Gmail app password
   },
 });
 
-app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Log incoming requests for debugging
@@ -49,6 +53,7 @@ app.use((req, res, next) => {
   next();
 });
 
+
 mongoose
 .connect("mongodb://127.0.0.1:27017/rofl")
 .then(() => console.log("MongoDB Connected 🚀"))
@@ -56,42 +61,64 @@ mongoose
 
 
 
-//=========================================================================================================================
-const uploadDir = "uploads";
+//==========================CLOUDINARY===============================================================================
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+
+const uploadDir = "uploads";    
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
 
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+const uploadPath = path.join(__dirname, "uploads/images");
+fs.mkdirSync(uploadPath, { recursive: true });
+
+app.use("/upload", express.static(path.join(__dirname, "uploads")));
 
 
-const storage = multer.diskStorage({
+const storage = multer.diskStorage({            // MULTER STORAGE
   destination: (req, file, cb) => {
-    cb(null, uploadDir);
+    cb(null, uploadPath);
   },
-  filename:  (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  }
+  filename: (req, file, cb) => {
+    crypto.randomBytes(12, (err, bytes) => {
+      if (err) return cb(err);
+      const filename =
+        bytes.toString("hex") + path.extname(file.originalname);
+      cb(null, filename);
+    });
+  },
 });
 
-// ========================
-// IMAGE ONLY FILTER
-// ========================
-const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith("image")) {
+
+const fileFilter = (req, file, cb) => {         //  FILTER => IMAGE ONLY
+  if (file.mimetype.startsWith("image/")) {
     cb(null, true);
   } else {
-    cb(new Error("Only image files are allowed!"), false);
+    cb(new Error("Only image files are allowed"), false);
   }
 };
 
-const upload = multer({
+
+const upload = multer({                          // FILER SIZE OF IMAGE
   storage,
   fileFilter,
-  limits: { fileSize: 2 * 1024 * 1024 } // 2MB
+  limits: { fileSize: 2 * 1024 * 1024 },
 });
-//=========================================================================================================================
 
+
+//==============================CLOUDINARY END=================================================================
+
+
+
+
+//=============================ROUTES STARTS FROM HERE ================================================
 
 
 app.get("/", (req, res) => {
@@ -300,51 +327,82 @@ app.post("/reset-password", async (req, res) => {
   }
 });
 
+app.post("/upload", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
 
+    console.log("Uploading file:", req.file.path);
 
-// ======================================================================================================================
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: "my_app_images",
+    });
 
-// Upload single image
-app.post("/upload", upload.single("image"), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ message: 'No file uploaded' });
+    res.json({
+      message: "Upload successful",
+      url: result.secure_url,
+    });
+  } catch (err) {
+    console.error("🔥 CLOUDINARY ERROR:", err);
+    res.status(500).json({
+      message: "Upload failed",
+      error: err.message,
+    });
   }
-  res.json({
-    message: "Image uploaded successfully",
-    fileName: req.file.filename,
-    fileUrl: `http://localhost:3000/uploads/${req.file.filename}`
-  });
 });
 
+app.post("/upload-profile-image",
+  authMiddleware,
+  upload.single("image"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
 
-// Upload multiple images
-// app.post("/upload-multiple", upload.array("images", 3), (req, res) => {
-//   res.json({
-//     message: "Images uploaded successfully",
-//     files: req.files.map(file => ({
-//       fileName: file.filename,
-//       fileUrl: `http://localhost:3000/uploads/${file.filename}`
-//     }))
-//   });
-// });
+      // Upload to Cloudinary
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "profile_images",
+      });
 
-// ========================
-// ERROR HANDLER (MULTER + GENERAL)
-// ========================
+      // Save URL in database
+      const user = await User.findByIdAndUpdate(
+        req.user.id,
+        { profileImage: result.secure_url },
+        { new: true }
+      ).select("-password");
+
+      res.json({
+        message: "Profile image uploaded successfully",
+        imageUrl: result.secure_url,
+        user
+      });
+
+    } catch (err) {
+      console.error("Upload error:", err);
+      res.status(500).json({
+        message: "Upload failed",
+        error: err.message
+      });
+    }
+  }
+);
+
+
+
+
+
+
+
+// Global Error Handling Middleware
+
+
 app.use((err, req, res, next) => {
   res.status(400).json({
     error: err.message
   });
 });
-// i have tried to upload the photo but its not working right now at the movement 
-
-//============================================================================================================================================
-
-
-
-
-
-
 
 
 app.post("/login", async (req, res) => {
@@ -408,8 +466,6 @@ app.post("/logout", (req, res) => {
   });
   res.status(200).json({ message: "Logged out successfully" });
 });
-
-
 
 
 //    Server Listening
