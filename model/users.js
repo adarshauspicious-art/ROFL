@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -20,12 +21,10 @@ const userSchema = new mongoose.Schema({
 
   profileImage: {
     type: String,
-    default: "",  
+    default: "",
   },
 
-  otpGeneratedAt: {
-    type: Date,
-  },
+  otpGeneratedAt: Date,
   resetPasswordToken: String,
   resetPasswordExpire: Date,
   resetOTP: String,

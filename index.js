@@ -1,7 +1,5 @@
-import dotenv from "dotenv";
-dotenv.config();
 import express from "express";
-import multer from "multer";  
+import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import mongoose from "mongoose";
 import cors from "cors";
@@ -15,18 +13,15 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import { User } from "./model/users.js";
 
-
-
+import dotenv from "dotenv";
+dotenv.config();
 
 //=========================================================================================================================
 
-
-console.log("Cloudinary config:", cloudinary.config()); 
+console.log("Cloudinary config:", cloudinary.config());
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 //=======================================================================================================================
-
-
 
 const app = express();
 app.use(express.json());
@@ -34,10 +29,11 @@ app.use(
   cors({
     origin: "http://localhost:3000", // frontend URL
     credentials: true, // important for cookies
-  })
+  }),
 );
 
-const transporter = nodemailer.createTransport({          //    NODEMAILER TRANSPORTER
+const transporter = nodemailer.createTransport({
+  //    NODEMAILER TRANSPORTER
   service: "gmail", // Gmail service (Nodemailer will use the correct SMTP host/port)
   auth: {
     user: process.env.EMAaIL_USER, // Your Gmail address
@@ -53,13 +49,10 @@ app.use((req, res, next) => {
   next();
 });
 
-
 mongoose
-.connect("mongodb://127.0.0.1:27017/rofl")
-.then(() => console.log("MongoDB Connected 🚀"))
-.catch((err) => console.log(err));
-
-
+  .connect("mongodb://127.0.0.1:27017/rofl")
+  .then(() => console.log("MongoDB Connected 🚀"))
+  .catch((err) => console.log(err));
 
 //==========================CLOUDINARY===============================================================================
 
@@ -69,35 +62,32 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-
-const uploadDir = "uploads";    
+const uploadDir = "uploads";
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
-
 
 const uploadPath = path.join(__dirname, "uploads/images");
 fs.mkdirSync(uploadPath, { recursive: true });
 
 app.use("/upload", express.static(path.join(__dirname, "uploads")));
 
-
-const storage = multer.diskStorage({            // MULTER STORAGE
+const storage = multer.diskStorage({
+  // MULTER STORAGE
   destination: (req, file, cb) => {
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
     crypto.randomBytes(12, (err, bytes) => {
       if (err) return cb(err);
-      const filename =
-        bytes.toString("hex") + path.extname(file.originalname);
+      const filename = bytes.toString("hex") + path.extname(file.originalname);
       cb(null, filename);
     });
   },
 });
 
-
-const fileFilter = (req, file, cb) => {         //  FILTER => IMAGE ONLY
+const fileFilter = (req, file, cb) => {
+  //  FILTER => IMAGE ONLY
   if (file.mimetype.startsWith("image/")) {
     cb(null, true);
   } else {
@@ -105,21 +95,16 @@ const fileFilter = (req, file, cb) => {         //  FILTER => IMAGE ONLY
   }
 };
 
-
-const upload = multer({                          // FILER SIZE OF IMAGE
+const upload = multer({
+  // FILER SIZE OF IMAGE
   storage,
   fileFilter,
   limits: { fileSize: 2 * 1024 * 1024 },
 });
 
-
 //==============================CLOUDINARY END=================================================================
 
-
-
-
 //=============================ROUTES STARTS FROM HERE ================================================
-
 
 app.get("/", (req, res) => {
   res.send("ROFL  Backend is running! 🚀");
@@ -160,7 +145,7 @@ app.post("/register", async (req, res) => {
     const token = jwt.sign(
       { id: newUser._id, email: newUser.email },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: "1d" },
     );
 
     res.status(201).json({
@@ -333,18 +318,26 @@ app.post("/upload", upload.single("image"), async (req, res) => {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    console.log("Uploading file:", req.file.path);
-
+    // Upload to Cloudinary
     const result = await cloudinary.uploader.upload(req.file.path, {
       folder: "my_app_images",
     });
 
+    // Save URL in database
+    const user = new User({
+      ...req.body,            // any other fields from the form
+      profileImage: result.secure_url, 
+    });
+
+    await user.save();
+
     res.json({
       message: "Upload successful",
-      url: result.secure_url,
+      user,
+      imageUrl: result.secure_url,
     });
   } catch (err) {
-    console.error("🔥 CLOUDINARY ERROR:", err);
+    console.error("CLOUDINARY ERROR:", err);
     res.status(500).json({
       message: "Upload failed",
       error: err.message,
@@ -352,58 +345,14 @@ app.post("/upload", upload.single("image"), async (req, res) => {
   }
 });
 
-app.post("/upload-profile-image",
-  authMiddleware,
-  upload.single("image"),
-  async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
-      }
-
-      // Upload to Cloudinary
-      const result = await cloudinary.uploader.upload(req.file.path, {
-        folder: "profile_images",
-      });
-
-      // Save URL in database
-      const user = await User.findByIdAndUpdate(
-        req.user.id,
-        { profileImage: result.secure_url },
-        { new: true }
-      ).select("-password");
-
-      res.json({
-        message: "Profile image uploaded successfully",
-        imageUrl: result.secure_url,
-        user
-      });
-
-    } catch (err) {
-      console.error("Upload error:", err);
-      res.status(500).json({
-        message: "Upload failed",
-        error: err.message
-      });
-    }
-  }
-);
-
-
-
-
-
-
 
 // Global Error Handling Middleware
 
-
 app.use((err, req, res, next) => {
   res.status(400).json({
-    error: err.message
+    error: err.message,
   });
 });
-
 
 app.post("/login", async (req, res) => {
   try {
@@ -431,7 +380,7 @@ app.post("/login", async (req, res) => {
     const token = jwt.sign(
       { id: user._id, email: user.email },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: "1d" },
     );
 
     res.cookie("token", token, {
@@ -466,7 +415,6 @@ app.post("/logout", (req, res) => {
   });
   res.status(200).json({ message: "Logged out successfully" });
 });
-
 
 //    Server Listening
 app.listen(5000, () => {
