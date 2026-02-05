@@ -1,4 +1,5 @@
 import express from "express";
+import cookieParser from "cookie-parser";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import mongoose from "mongoose";
@@ -12,6 +13,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import { User } from "./model/users.js";
+import { Image } from "./model/Image.js";
 
 import dotenv from "dotenv";
 dotenv.config();
@@ -25,6 +27,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.json());
+app.use(cookieParser());
 app.use(
   cors({
     origin: "http://localhost:3000", // frontend URL
@@ -312,41 +315,31 @@ app.post("/reset-password", async (req, res) => {
   }
 });
 
-app.post("/upload", upload.single("image"), async (req, res) => {
+app.post("/upload", authMiddleware, upload.single("image"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
-    }
+    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
-    // Upload to Cloudinary
     const result = await cloudinary.uploader.upload(req.file.path, {
       folder: "my_app_images",
     });
 
-    // Save URL in database
-    const user = new User({
-      ...req.body,            // any other fields from the form
-      profileImage: result.secure_url, 
+    const imageDoc = new Image({
+      url: result.secure_url,
+      uploadedBy: req.user.id, // optional
     });
 
-    await user.save();
+    await imageDoc.save();
 
     res.json({
-      message: "Upload successful",
-      user,
+      message: "Image uploaded successfully",
       imageUrl: result.secure_url,
     });
   } catch (err) {
-    console.error("CLOUDINARY ERROR:", err);
-    res.status(500).json({
-      message: "Upload failed",
-      error: err.message,
-    });
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-
-// Global Error Handling Middleware
 
 app.use((err, req, res, next) => {
   res.status(400).json({
