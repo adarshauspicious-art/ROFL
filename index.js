@@ -14,9 +14,12 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import { User } from "./model/users.js";
 import { Image } from "./model/Image.js";
-
+import rateLimit from "express-rate-limit"; 
 import dotenv from "dotenv";
 dotenv.config();
+
+
+
 
 //=========================================================================================================================
 
@@ -39,7 +42,7 @@ const transporter = nodemailer.createTransport({
   //    NODEMAILER TRANSPORTER
   service: "gmail", // Gmail service (Nodemailer will use the correct SMTP host/port)
   auth: {
-    user: process.env.EMAaIL_USER, // Your Gmail address
+    user: process.env.EMAIL_USER, // Your Gmail address
     pass: process.env.EMAIL_PASS, // Your Gmail app password
   },
 });
@@ -106,6 +109,25 @@ const upload = multer({
 });
 
 //==============================CLOUDINARY END=================================================================
+
+
+
+//==============================RATE LIMITER ========================================================
+app.set("trust proxy", 1);
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  message: "Too many requests, please try again later."
+});
+
+// Applying globally
+app.use(limiter);
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5
+});
 
 //=============================ROUTES STARTS FROM HERE ================================================
 
@@ -199,28 +221,53 @@ app.post("/forget-password", async (req, res) => {
       to: email,
       subject: "Your ROFL Password Reset Code",
       html: `
-    <div style="font-family: Arial, sans-serif; line-height:1.6; color:#333; max-width:600px; margin:auto; padding:20px; border:1px solid #e0e0e0; border-radius:8px;">
-      
-      <h2 style="color:#1a73e8;">Hello ${user.name} ,</h2>
-      
-      <p>We received a request to reset the password for your ROFL account. Use the OTP below to verify your identity and reset your password:</p>
-      
-      <div style="background:#f4f4f4; padding:15px; border-radius:5px; text-align:center; font-size:24px; font-weight:bold; margin:20px 0;">
-        ${otp}
-      </div>
-      
-      <p>This OTP will expire in <strong>10 minutes</strong>.</p>
-      
-      <p>If you did not request a password reset, please ignore this email. Your account is safe.</p>
-      
-      <hr style="border:none; border-top:1px solid #e0e0e0; margin:20px 0;">
-      
-      <p style="font-size:12px; color:#777;">For your security, never share your OTP with anyone. ROFL will never ask for your password or OTP over email.</p>
-      
-      <p style="margin-top:20px;">Thanks,<br/>
-      The ROFL Team</p>
+  <div style="font-family: Arial, sans-serif; line-height:1.6; color:#333; max-width:600px; margin:auto; padding:20px; border:1px solid #e0e0e0; border-radius:8px;">
+    
+    <h2 style="color:#1a73e8;">Hello ${user.name} ,</h2>
+    
+    <p>We received a request to reset the password for your ROFL account. Use the OTP below to verify your identity and reset your password:</p>
+    
+    <div style="background:#f4f4f4; padding:15px; border-radius:5px; text-align:center; font-size:24px; font-weight:bold; margin:20px 0;">
+      ${otp}
     </div>
-  `,
+    
+    <p>This OTP will expire in <strong>10 minutes</strong>.</p>
+    
+    <p>If you did not request a password reset, please ignore this email. Your account is safe.</p>
+    
+    <hr style="border:none; border-top:1px solid #e0e0e0; margin:20px 0;">
+    
+    <p style="font-size:12px; color:#777;">
+      For your security, never share your OTP with anyone. ROFL will never ask for your password or OTP over email.
+    </p>
+    
+    <p style="margin-top:20px;">
+      Thanks,<br/>
+      The ROFL Team
+    </p>
+
+    <!-- Footer Section -->
+    <hr style="border:none; border-top:1px solid #e0e0e0; margin:25px 0;">
+
+    <div style="text-align:center; font-size:12px; color:#999;">
+      <img src=https://res.cloudinary.com/du4y3qam1/image/upload/v1771308377/profile_pics/sn8poe8jn6u4e58tnqlf.png
+           alt="ROFL Logo" 
+           style="width:120px; margin-bottom:10px;" />
+      
+      <p style="margin:5px 0;">
+        © 2026 ROFL. All rights reserved.
+      </p>
+      
+      <p style="margin:5px 0;">
+        <a href="mailto:adarshauspicious@gmail.com" 
+           style="color:#1a73e8; text-decoration:none;">
+           Contact Us
+        </a>
+      </p>
+    </div>
+  </div>
+`
+,
     });
 
     console.log("Email sent successfully:", info.response);
@@ -315,31 +362,72 @@ app.post("/reset-password", async (req, res) => {
   }
 });
 
-app.post("/upload", authMiddleware, upload.single("image"), async (req, res) => {
+app.post("/user/profile-image",authMiddleware,upload.single("image"),
+  async (req, res) => {
+    try {
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const user = await User.findById(req.user.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // delete old image
+      if (user.profileImage?.publicId) {
+        await cloudinary.uploader.destroy(user.profileImage.publicId);
+      }
+
+      // upload new image
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "profile_pics",
+      });
+
+      // update user
+      user.profileImage = {
+        url: result.secure_url,
+        publicId: result.public_id,
+      };
+      
+      await user.save();
+      
+      res.json({
+        message: "Profile image updated successfully",
+        imageUrl: result.secure_url,
+        savedInDb: user.profileImage,
+      });
+    } catch (err) {
+      console.error("PROFILE IMAGE ERROR:", err);
+      res.status(500).json({ error: err.message });
+    }
+  },
+);
+
+app.get("/user/me", authMiddleware, async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
 
-    const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: "my_app_images",
-    });
+    const user = await User.findById(req.user.id).select(
+      "name email profileImage"
+    );
 
-    const imageDoc = new Image({
-      url: result.secure_url,
-      uploadedBy: req.user.id, // optional
-    });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-    await imageDoc.save();
-
-    res.json({
-      message: "Image uploaded successfully",
-      imageUrl: result.secure_url,
-    });
+    res.json(user);
   } catch (err) {
-    console.error(err);
+    console.error("GET /user/me ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
-
 
 app.use((err, req, res, next) => {
   res.status(400).json({
@@ -347,7 +435,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.post("/login", async (req, res) => {
+app.post("/login", loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -408,6 +496,8 @@ app.post("/logout", (req, res) => {
   });
   res.status(200).json({ message: "Logged out successfully" });
 });
+
+
 
 //    Server Listening
 app.listen(5000, () => {

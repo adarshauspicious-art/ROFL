@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const imageSchema = new mongoose.Schema({
+const ImageSchema = new mongoose.Schema({
   url: {
     type: String,
     required: true,
@@ -10,12 +10,15 @@ const imageSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
   }, // optional, if you want
+  profileImage: {
+    url: String,
+    publicId: String,
+  },
 
   createdAt: {
     type: Date,
     default: Date.now,
   },
-  
 });
 
-export const Image = mongoose.model("Image", imageSchema);
+export const Image = mongoose.model("Image", ImageSchema);
