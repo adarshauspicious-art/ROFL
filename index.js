@@ -435,6 +435,9 @@ app.use((err, req, res, next) => {
   });
 });
 
+
+
+
 app.post("/login", loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -479,8 +482,8 @@ app.post("/login", loginLimiter, async (req, res) => {
       user: {
         id: user._id,
         name: user.name,
-        email: user.email,
-      },
+          email: user.email,
+        },
     });
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message });
