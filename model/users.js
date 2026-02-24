@@ -18,8 +18,13 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  role: {
+    type: String,
+    enum: ["admin", "seller", "user"],
+    default: "seller",
+  },
 
-   profileImage: {
+  profileImage: {
     url: String,
     publicId: String,
   },
@@ -29,6 +34,8 @@ const userSchema = new mongoose.Schema({
   resetPasswordExpire: Date,
   resetOTP: String,
   resetOTPExpires: Date,
-});
+
+  
+},{createdAt: true, timestamps: true });
 
 export const User = mongoose.model("User", userSchema);

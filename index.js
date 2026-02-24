@@ -14,12 +14,13 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import { User } from "./model/users.js";
 import { Image } from "./model/Image.js";
-import rateLimit from "express-rate-limit"; 
+import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
+import verifyToken from "./middleware/verifyToken.js";
+import authorizeRole from "./middleware/authorizeRole.js";
+import WebUser from "./model/webUsers.js";
+
 dotenv.config();
-
-
-
 
 //=========================================================================================================================
 
@@ -57,7 +58,7 @@ app.use((req, res, next) => {
 
 mongoose
   .connect("mongodb://127.0.0.1:27017/rofl")
-  .then(() => console.log("MongoDB Connected 🚀"))
+  .then(() => console.log("MongoDB is Connected  🚀"))
   .catch((err) => console.log(err));
 
 //==========================CLOUDINARY===============================================================================
@@ -110,15 +111,13 @@ const upload = multer({
 
 //==============================CLOUDINARY END=================================================================
 
-
-
 //==============================RATE LIMITER ========================================================
 app.set("trust proxy", 1);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100,
-  message: "Too many requests, please try again later."
+  message: "Too many requests, please try again later.",
 });
 
 // Applying globally
@@ -126,7 +125,7 @@ app.use(limiter);
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5
+  max: 5,
 });
 
 //=============================ROUTES STARTS FROM HERE ================================================
@@ -135,7 +134,7 @@ app.get("/", (req, res) => {
   res.send("ROFL  Backend is running! 🚀");
 });
 
-app.get("/me", authMiddleware, async (req, res) => {
+app.get("/me", verifyToken, async (req, res) => {
   const user = await User.findById(req.user.id).select("-password");
 
   if (!user) {
@@ -188,7 +187,7 @@ app.post("/register", async (req, res) => {
   }
 });
 
-app.get("/api/users", authMiddleware, async (req, res) => {
+app.get("/api/users", verifyToken, async (req, res) => {
   try {
     const users = await User.find().select("-password"); // fetch all users from DB
     res.status(200).json(users);
@@ -266,8 +265,7 @@ app.post("/forget-password", async (req, res) => {
       </p>
     </div>
   </div>
-`
-,
+`,
     });
 
     console.log("Email sent successfully:", info.response);
@@ -362,8 +360,7 @@ app.post("/reset-password", async (req, res) => {
   }
 });
 
-app.post("/user/profile-image",authMiddleware,upload.single("image"),
-  async (req, res) => {
+app.post("/user/profile-image",verifyToken,upload.single("image"),async (req, res) => {
     try {
       if (!req.user || !req.user.id) {
         return res.status(401).json({ message: "Unauthorized" });
@@ -378,7 +375,7 @@ app.post("/user/profile-image",authMiddleware,upload.single("image"),
         return res.status(404).json({ message: "User not found" });
       }
 
-      // delete old image
+      // delete old image or cloudiary se bhi krega
       if (user.profileImage?.publicId) {
         await cloudinary.uploader.destroy(user.profileImage.publicId);
       }
@@ -388,14 +385,14 @@ app.post("/user/profile-image",authMiddleware,upload.single("image"),
         folder: "profile_pics",
       });
 
-      // update user
+      // update userrpofile 
       user.profileImage = {
         url: result.secure_url,
         publicId: result.public_id,
       };
-      
+
       await user.save();
-      
+
       res.json({
         message: "Profile image updated successfully",
         imageUrl: result.secure_url,
@@ -408,14 +405,14 @@ app.post("/user/profile-image",authMiddleware,upload.single("image"),
   },
 );
 
-app.get("/user/me", authMiddleware, async (req, res) => {
+app.get("/user/me", verifyToken, async (req, res) => {
   try {
     if (!req.user || !req.user.id) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
     const user = await User.findById(req.user.id).select(
-      "name email profileImage"
+      "name email profileImage",
     );
 
     if (!user) {
@@ -429,32 +426,76 @@ app.get("/user/me", authMiddleware, async (req, res) => {
   }
 });
 
-app.use((err, req, res, next) => {
-  res.status(400).json({
-    error: err.message,
-  });
+app.get("/admin/dashboard",verifyToken,authorizeRole("admin"),(req, res) => {
+    res.json({ message: "Welcome Admin" });
+  },
+);
+
+app.get( "/seller/dashboard", verifyToken, authorizeRole("seller"),(req, res) => {
+    res.json({ message: "Welcome Seller" });
+  },
+);
+
+app.post("/web/user-register", async (req, res) => {
+  try {
+    const { email, password, confirmPassword } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({
+        message: "All fields are required",
+      });
+    }
+    const existingUser = await WebUser.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({
+        message: "User aleady exists",
+      });
+    }
+    
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        message: "Passwords do not match ",
+      });
+    }
+    
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    const newUser = await WebUser.create({
+      email,
+      password: hashedPassword,
+    });
+    res.status(201).json({
+      message: "User created successfully",
+      user: {
+        id: newUser._id,
+        email: newUser.email,
+      }
+    });
+    
+  } catch (err) {
+    res.status(500).json({
+      message: "Server error",
+      error: err.message,
+    });
+  }
 });
-
-
-
 
 app.post("/login", loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
-
+    
     // Validate
     if (!email || !password) {
       return res
-        .status(400)
-        .json({ message: "Email and password are required" });
+      .status(400)
+      .json({ message: "Email and password are required" });
     }
-
+    
     // Find user by email
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ message: "Invalid email or password" });
     }
-
+    
     // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
@@ -462,11 +503,11 @@ app.post("/login", loginLimiter, async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user._id, email: user.email },
+      { id: user._id, email: user.email, role: user.role }, // include role
       process.env.JWT_SECRET,
       { expiresIn: "1d" },
     );
-
+    
     res.cookie("token", token, {
       httpOnly: true,
       secure: false,
@@ -477,16 +518,63 @@ app.post("/login", loginLimiter, async (req, res) => {
     // If successful then
     res.status(200).json({
       message: "Login successful",
-
       token,
       user: {
         id: user._id,
         name: user.name,
-          email: user.email,
-        },
+        email: user.email,
+        role: user.role, // send role to frontend
+      },
     });
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+app.post("/web/login",loginLimiter, async (req,res) =>{
+  try{
+    const {email, password} = req.body;
+    if(!email || !password){
+      return res.status(400).json({
+        message: " Email and Password are required"
+      })
+    }
+    const user = await WebUser.findOne({email});
+    if(!user){
+      return res.status(400).json({
+        message: "Invalid email or password"
+      })
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if(!isMatch){
+      return res.status(400).json({
+        message: "Invalid email or password"
+      })
+    }
+    const token = jwt.sign(
+      { id: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" },
+    );
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: false,
+      sameSite: "strict",
+      path: "/",
+    });
+    res.status(200).json({
+      message: "Login successful", 
+      user: {
+        id: user._id,
+        email: user.email,
+      },
+    });
+  }
+  catch(err){
+    res.status(500).json({
+      message: "Server error",
+      error: err.message,
+    })
   }
 });
 
@@ -502,7 +590,14 @@ app.post("/logout", (req, res) => {
 
 
 
-//    Server Listening
+
+
+app.use((err, req, res, next) => {
+  res.status(400).json({
+    error: err.message,
+  });
+});
+
 app.listen(5000, () => {
   console.log("ROFL Server is running on port 5000 🚀");
 });
