@@ -21,6 +21,7 @@ const hostItemSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    images: [],
     
 
 },{timestamps: true, createdAt: true});

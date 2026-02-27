@@ -608,7 +608,7 @@ app.post("/host-items", async (req, res) => {
       description
     });
 
-    const net = newItem.desiredNetPayout; // ✅ Only this comes from user
+    const net = newItem.desiredNetPayout; //   this comes from user
 
     // Step 1: Ticket Price derived from net
     let ticketPrice;
@@ -675,6 +675,8 @@ app.post("/host-items", async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+
 
 
 
