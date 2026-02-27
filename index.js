@@ -1,8 +1,11 @@
-import express from "express";
+import express from "express";    
+import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
+// file upload imports
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
-import mongoose from "mongoose";
+import fs from "fs";
+//------------------------------------------------------------------------------------
 import cors from "cors";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
@@ -11,7 +14,6 @@ import nodemailer from "nodemailer";
 import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
-import fs from "fs";
 import { User } from "./model/users.js";
 import { Image } from "./model/Image.js";
 import rateLimit from "express-rate-limit";
@@ -19,10 +21,11 @@ import dotenv from "dotenv";
 import verifyToken from "./middleware/verifyToken.js";
 import authorizeRole from "./middleware/authorizeRole.js";
 import WebUser from "./model/webUsers.js";
+import hostItem from "./model/hostItems.js";
 
 dotenv.config();
-
-//=========================================================================================================================
+const router = express.Router();
+//==============================  ===========================================================================================
 
 console.log("Cloudinary config:", cloudinary.config());
 const __filename = fileURLToPath(import.meta.url);
@@ -375,15 +378,15 @@ app.post("/user/profile-image",verifyToken,upload.single("image"),async (req, re
         return res.status(404).json({ message: "User not found" });
       }
 
-      // delete old image or cloudiary se bhi krega
-      if (user.profileImage?.publicId) {
-        await cloudinary.uploader.destroy(user.profileImage.publicId);
-      }
-
       // upload new image
       const result = await cloudinary.uploader.upload(req.file.path, {
         folder: "profile_pics",
       });
+
+      // delete old image or cloudiary se bhi krega
+      if (user.profileImage?.publicId) {
+        await cloudinary.uploader.destroy(user.profileImage.publicId);
+      }
 
       // update userrpofile 
       user.profileImage = {
@@ -479,7 +482,7 @@ app.post("/web/user-register", async (req, res) => {
   }
 });
 
-app.post("/login", loginLimiter, async (req, res) => {
+app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     
@@ -587,6 +590,92 @@ app.post("/logout", (req, res) => {
   });
   res.status(200).json({ message: "Logged out successfully" });
 });
+
+
+app.post("/host-items", async (req, res) => {
+  try {
+    const { itemTitle, selectCategory, desiredNetPayout, selectTimeline, description } = req.body;
+
+    if (!itemTitle || !selectCategory || !desiredNetPayout || !selectTimeline || !description) {
+      return res.status(400).json({ success: false, message: "Missing required fields" });
+    }
+
+    const newItem = await hostItem.create({
+      itemTitle,
+      selectCategory,
+      desiredNetPayout: Number(desiredNetPayout),
+      selectTimeline,
+      description
+    });
+
+    const net = newItem.desiredNetPayout; // ✅ Only this comes from user
+
+    // Step 1: Ticket Price derived from net
+    let ticketPrice;
+    if (net <= 500) {
+      ticketPrice = 5;
+    } else if (net <= 1000) {
+      ticketPrice = 10;
+    } else if (net <= 4999) {
+      ticketPrice = 25;
+    } else if (net <= 24999) {
+      ticketPrice = 50;
+    } else {
+      ticketPrice = 100;
+    }
+
+    // Step 2: Platform Fee derived from net
+    let platformFee;
+    if (net <= 50000) {
+      platformFee = 0.10 * net;
+    } else if (net <= 100000) {
+      platformFee = (0.10 * 50000) + (0.05 * (net - 50000));
+    } else {
+      platformFee = (0.10 * 50000) + (0.05 * 50000) + (0.025 * (net - 100000));
+    }
+
+    // Step 3: Buffer derived from net
+    const buffer = Math.max(0.05 * net, 10);
+
+    // Step 4: Base Pot
+    const base = net + platformFee + buffer;
+
+    // Step 5: Iterative Processing Fee
+    let pot = base;
+    while (true) {
+      const newPot = base + (0.035 * pot);
+      if (Math.abs(newPot - pot) < 1) break;
+      pot = newPot;
+    }
+
+    // Step 6: Total Spots and Total Pot
+    const totalSpots = Math.ceil(pot / ticketPrice);
+    const totalPot = totalSpots * ticketPrice;
+
+    // Step 7: Remaining fees derived from totalPot
+    const processingFee = parseFloat((0.035 * totalPot).toFixed(2));
+    const irsWithholding = parseFloat((0.25 * totalPot).toFixed(2));
+
+    const calculations = {
+      desiredNetPayout: net,       // from user
+      ticketPrice,                 // calculated
+      totalSpots,                  // calculated
+      totalPot,                    // calculated
+      platformFee: parseFloat(platformFee.toFixed(2)),  // calculated
+      processingFee,               // calculated
+      irsWithholding,              // calculated
+    };
+
+    res.status(201).json({
+      success: true,
+      data: { ...newItem.toObject(), calculations }
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 
 
 

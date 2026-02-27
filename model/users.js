@@ -28,6 +28,11 @@ const userSchema = new mongoose.Schema({
     url: String,
     publicId: String,
   },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+
+},
 
   otpGeneratedAt: Date,
   resetPasswordToken: String,
