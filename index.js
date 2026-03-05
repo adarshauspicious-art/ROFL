@@ -128,7 +128,7 @@ app.use(limiter);
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 20,
 });
 
 //=============================ROUTES STARTS FROM HERE ================================================
@@ -658,13 +658,13 @@ app.post("/host-items", async (req, res) => {
     const irsWithholding = parseFloat((0.25 * totalPot).toFixed(2));
 
     const calculations = {
-      desiredNetPayout: net,       // from user
-      ticketPrice,                 // calculated
-      totalSpots,                  // calculated
-      totalPot,                    // calculated
-      platformFee: parseFloat(platformFee.toFixed(2)),  // calculated
-      processingFee,               // calculated
-      irsWithholding,              // calculated
+      desiredNetPayout: net,     
+      ticketPrice,                 
+      totalSpots,                  
+      totalPot,                    
+      platformFee: parseFloat(platformFee.toFixed(2)),  
+      processingFee,               
+      irsWithholding,              
     };
 
     res.status(201).json({
