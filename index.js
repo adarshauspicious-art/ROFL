@@ -594,7 +594,7 @@ app.post("/logout", (req, res) => {
 
 app.post("/host-items", async (req, res) => {
   try {
-    const { itemTitle, selectCategory, desiredNetPayout, selectTimeline, description } = req.body;
+    const { itemTitle, selectCategory, desiredNetPayout, selectTimeline, description, images } = req.body;
 
     if (!itemTitle || !selectCategory || !desiredNetPayout || !selectTimeline || !description) {
       return res.status(400).json({ success: false, message: "Missing required fields" });
@@ -605,7 +605,8 @@ app.post("/host-items", async (req, res) => {
       selectCategory,
       desiredNetPayout: Number(desiredNetPayout),
       selectTimeline,
-      description
+      description,
+      images: images || []
     });
 
     const net = newItem.desiredNetPayout; //   this comes from user
