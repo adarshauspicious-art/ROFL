@@ -1,4 +1,4 @@
-import express from "express";    
+import express from "express";
 import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
 // file upload imports
@@ -363,7 +363,11 @@ app.post("/reset-password", async (req, res) => {
   }
 });
 
-app.post("/user/profile-image",verifyToken,upload.single("image"),async (req, res) => {
+app.post(
+  "/user/profile-image",
+  verifyToken,
+  upload.single("image"),
+  async (req, res) => {
     try {
       if (!req.user || !req.user.id) {
         return res.status(401).json({ message: "Unauthorized" });
@@ -388,7 +392,7 @@ app.post("/user/profile-image",verifyToken,upload.single("image"),async (req, re
         await cloudinary.uploader.destroy(user.profileImage.publicId);
       }
 
-      // update userrpofile 
+      // update userrpofile
       user.profileImage = {
         url: result.secure_url,
         publicId: result.public_id,
@@ -429,12 +433,15 @@ app.get("/user/me", verifyToken, async (req, res) => {
   }
 });
 
-app.get("/admin/dashboard",verifyToken,authorizeRole("admin"),(req, res) => {
-    res.json({ message: "Welcome Admin" });
-  },
-);
+app.get("/admin/dashboard", verifyToken, authorizeRole("admin"), (req, res) => {
+  res.json({ message: "Welcome Admin" });
+});
 
-app.get( "/seller/dashboard", verifyToken, authorizeRole("seller"),(req, res) => {
+app.get(
+  "/seller/dashboard",
+  verifyToken,
+  authorizeRole("seller"),
+  (req, res) => {
     res.json({ message: "Welcome Seller" });
   },
 );
@@ -453,15 +460,15 @@ app.post("/web/user-register", async (req, res) => {
         message: "User aleady exists",
       });
     }
-    
+
     if (password !== confirmPassword) {
       return res.status(400).json({
         message: "Passwords do not match ",
       });
     }
-    
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    
+
     const newUser = await WebUser.create({
       email,
       password: hashedPassword,
@@ -471,9 +478,8 @@ app.post("/web/user-register", async (req, res) => {
       user: {
         id: newUser._id,
         email: newUser.email,
-      }
+      },
     });
-    
   } catch (err) {
     res.status(500).json({
       message: "Server error",
@@ -485,20 +491,20 @@ app.post("/web/user-register", async (req, res) => {
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     // Validate
     if (!email || !password) {
       return res
-      .status(400)
-      .json({ message: "Email and password are required" });
+        .status(400)
+        .json({ message: "Email and password are required" });
     }
-    
+
     // Find user by email
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ message: "Invalid email or password" });
     }
-    
+
     // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
@@ -510,7 +516,7 @@ app.post("/login", async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: "1d" },
     );
-    
+
     res.cookie("token", token, {
       httpOnly: true,
       secure: false,
@@ -534,25 +540,25 @@ app.post("/login", async (req, res) => {
   }
 });
 
-app.post("/web/login",loginLimiter, async (req,res) =>{
-  try{
-    const {email, password} = req.body;
-    if(!email || !password){
+app.post("/web/login", loginLimiter, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
       return res.status(400).json({
-        message: " Email and Password are required"
-      })
+        message: " Email and Password are required",
+      });
     }
-    const user = await WebUser.findOne({email});
-    if(!user){
+    const user = await WebUser.findOne({ email });
+    if (!user) {
       return res.status(400).json({
-        message: "Invalid email or password"
-      })
+        message: "Invalid email or password",
+      });
     }
     const isMatch = await bcrypt.compare(password, user.password);
-    if(!isMatch){
+    if (!isMatch) {
       return res.status(400).json({
-        message: "Invalid email or password"
-      })
+        message: "Invalid email or password",
+      });
     }
     const token = jwt.sign(
       { id: user._id, email: user.email },
@@ -566,18 +572,17 @@ app.post("/web/login",loginLimiter, async (req,res) =>{
       path: "/",
     });
     res.status(200).json({
-      message: "Login successful", 
+      message: "Login successful",
       user: {
         id: user._id,
         email: user.email,
       },
     });
-  }
-  catch(err){
+  } catch (err) {
     res.status(500).json({
       message: "Server error",
       error: err.message,
-    })
+    });
   }
 });
 
@@ -591,14 +596,34 @@ app.post("/logout", (req, res) => {
   res.status(200).json({ message: "Logged out successfully" });
 });
 
-
 app.post("/host-items", async (req, res) => {
   try {
-    const { itemTitle, selectCategory, desiredNetPayout, selectTimeline, description, images } = req.body;
+    const {
+      itemTitle,
+      selectCategory,
+      desiredNetPayout,
+      selectTimeline,
+      description,
+      images,
+    } = req.body;
 
-    if (!itemTitle || !selectCategory || !desiredNetPayout || !selectTimeline || !description) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
+    if (
+      !itemTitle ||
+      !selectCategory ||
+      !desiredNetPayout ||
+      !selectTimeline ||
+      !description
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required fields" });
     }
+
+    const timelineDays = parseInt(selectTimeline); // automatically gets 7, 15, 21, 30
+
+    const startDate = new Date();
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + timelineDays);
 
     const newItem = await hostItem.create({
       itemTitle,
@@ -606,12 +631,14 @@ app.post("/host-items", async (req, res) => {
       desiredNetPayout: Number(desiredNetPayout),
       selectTimeline,
       description,
-      images: images || []
+      images: images || [],
+      startDate,
+      endDate,
     });
 
-    const net = newItem.desiredNetPayout; //   this comes from user
+    const net = newItem.desiredNetPayout;
 
-    // Step 1: Ticket Price derived from net
+    // Step 1: Ticket Price
     let ticketPrice;
     if (net <= 500) {
       ticketPrice = 5;
@@ -625,64 +652,57 @@ app.post("/host-items", async (req, res) => {
       ticketPrice = 100;
     }
 
-    // Step 2: Platform Fee derived from net
+    // Step 2: Platform Fee
     let platformFee;
     if (net <= 50000) {
-      platformFee = 0.10 * net;
+      platformFee = 0.1 * net;
     } else if (net <= 100000) {
-      platformFee = (0.10 * 50000) + (0.05 * (net - 50000));
+      platformFee = 0.1 * 50000 + 0.05 * (net - 50000);
     } else {
-      platformFee = (0.10 * 50000) + (0.05 * 50000) + (0.025 * (net - 100000));
+      platformFee = 0.1 * 50000 + 0.05 * 50000 + 0.025 * (net - 100000);
     }
 
-    // Step 3: Buffer derived from net
+    // Step 3: Buffer
     const buffer = Math.max(0.05 * net, 10);
 
-    // Step 4: Base Pot
+    // Step 4: Base
     const base = net + platformFee + buffer;
 
-    // Step 5: Iterative Processing Fee
+    // Step 5: Processing Fee Loop
     let pot = base;
     while (true) {
-      const newPot = base + (0.035 * pot);
+      const newPot = base + 0.035 * pot;
       if (Math.abs(newPot - pot) < 1) break;
       pot = newPot;
     }
 
-    // Step 6: Total Spots and Total Pot
-    const totalSpots = Math.ceil(pot / ticketPrice);
-    const totalPot = totalSpots * ticketPrice;
+    // Step 6: Total Tickets (Spots)
+    const totalTickets = Math.ceil(pot / ticketPrice);
+    const totalPot = totalTickets * ticketPrice;
 
-    // Step 7: Remaining fees derived from totalPot
+    // Step 7: Remaining Fees
     const processingFee = parseFloat((0.035 * totalPot).toFixed(2));
     const irsWithholding = parseFloat((0.25 * totalPot).toFixed(2));
 
     const calculations = {
-      desiredNetPayout: net,     
-      ticketPrice,                 
-      totalSpots,                  
-      totalPot,                    
-      platformFee: parseFloat(platformFee.toFixed(2)),  
-      processingFee,               
-      irsWithholding,              
+      desiredNetPayout: net,
+      ticketPrice,
+      totalTickets, // ✅ added total tickets
+      totalSpots: totalTickets, // optional if you still want spots
+      totalPot,
+      platformFee: parseFloat(platformFee.toFixed(2)),
+      processingFee,
+      irsWithholding,
     };
 
     res.status(201).json({
       success: true,
-      data: { ...newItem.toObject(), calculations }
+      data: { ...newItem.toObject(), calculations },
     });
-
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
-
-
-
-
-
-
-
 
 app.use((err, req, res, next) => {
   res.status(400).json({
