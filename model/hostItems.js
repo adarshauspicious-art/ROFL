@@ -23,8 +23,21 @@ const hostItemSchema = new mongoose.Schema(
       required: true,
     },
     images: [],
-    startDate: { type: Date, default: Date.now },
-    endDate: { type: Date },
+    startDate: {
+      type: Date,
+      default: Date.now,
+    },
+    ownsPrize: {
+      type: Boolean,
+      default: false,
+    },
+    prizeImage: {
+      type: String,
+      default: null,
+    },
+    endDate: {
+      type: Date,
+    },
   },
   { timestamps: true, createdAt: true },
 );

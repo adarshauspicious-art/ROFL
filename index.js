@@ -22,7 +22,8 @@ import verifyToken from "./middleware/verifyToken.js";
 import authorizeRole from "./middleware/authorizeRole.js";
 import WebUser from "./model/webUsers.js";
 import hostItem from "./model/hostItems.js";
-
+import SellerProfile from "./model/sellerProfile.js";
+import Seller from "./model/sellerProfile.js";
 dotenv.config();
 const router = express.Router();
 //==============================  ===========================================================================================
@@ -117,19 +118,19 @@ const upload = multer({
 //==============================RATE LIMITER ========================================================
 app.set("trust proxy", 1);
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
-  message: "Too many requests, please try again later.",
-});
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, // 15 minutes
+//   max: 100,
+//   message: "Too many requests, please try again later.",
+// });
 
 // Applying globally
-app.use(limiter);
+// app.use(limiter);
 
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-});
+// const loginLimiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 20,
+// });
 
 //=============================ROUTES STARTS FROM HERE ================================================
 
@@ -488,34 +489,92 @@ app.post("/web/user-register", async (req, res) => {
   }
 });
 
+// app.post("/login", async (req, res) => {
+//   try {
+//     const { email, password } = req.body;
+
+//     // Validate
+//     if (!email || !password) {
+//       return res
+//         .status(400)
+//         .json({ message: "Email and password are required" });
+//     }
+
+//     // Find user by email
+//     const user = await User.findOne({ email });
+//     if (!user) {
+//       return res.status(400).json({ message: "Invalid email or password" });
+//     }
+
+//     // Compare password
+//     const isMatch = await bcrypt.compare(password, user.password);
+//     if (!isMatch) {
+//       return res.status(400).json({ message: "Invalid email or password" });
+//     }
+
+//     // const token = jwt.sign(
+//     //   { id: user._id, email: user.email, role: user.role }, // include role
+//     //   process.env.JWT_SECRET,
+//     //   { expiresIn: "1d" },
+//     // );
+//     const token = jwt.sign(
+//       { id: user._id, role: user.role }, //  IMPORTANT
+//       process.env.JWT_SECRET,
+//       { expiresIn: "1h" },
+//     );
+//     res.cookie("token", token, {
+//       httpOnly: true,
+//       secure: false,
+//       sameSite: "strict",
+//       path: "/",
+//     });
+
+//     // If successful then
+//     res.status(200).json({
+//       message: "Login successful",
+//       token,
+//       user: {
+//         id: user._id,
+//         name: user.name,
+//         email: user.email,
+//         role: user.role, // send role to frontend
+//       },
+//     });
+//   } catch (err) {
+//     res.status(500).json({ message: "Server error", error: err.message });
+//   }
+// });
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validate
     if (!email || !password) {
       return res
         .status(400)
         .json({ message: "Email and password are required" });
     }
 
-    // Find user by email
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
-    // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
     const token = jwt.sign(
-      { id: user._id, email: user.email, role: user.role }, // include role
+      { id: user._id, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" },
+      { expiresIn: "1h" },
     );
+
+    // ✅ FETCH SELLER DATA
+    let seller = null;
+    if (user.role === "seller") {
+      seller = await Seller.findOne({ userId: user._id });
+    }
 
     res.cookie("token", token, {
       httpOnly: true,
@@ -524,7 +583,7 @@ app.post("/login", async (req, res) => {
       path: "/",
     });
 
-    // If successful then
+    // ✅ SEND seller ALSO
     res.status(200).json({
       message: "Login successful",
       token,
@@ -532,15 +591,16 @@ app.post("/login", async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role, // send role to frontend
+        role: user.role,
       },
+      seller, // 🔥 THIS FIXES YOUR ISSUE
     });
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
-app.post("/web/login", loginLimiter, async (req, res) => {
+app.post("/web/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -605,6 +665,8 @@ app.post("/host-items", async (req, res) => {
       selectTimeline,
       description,
       images,
+      ownsPrize,
+      prizeImage,
     } = req.body;
 
     if (
@@ -624,6 +686,12 @@ app.post("/host-items", async (req, res) => {
     const startDate = new Date();
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + timelineDays);
+    if (req.body.ownsPrize && !req.body.prizeImage) {
+      return res.status(400).json({
+        success: false,
+        message: "Prize image required if you own the prize",
+      });
+    }
 
     const newItem = await hostItem.create({
       itemTitle,
@@ -634,6 +702,8 @@ app.post("/host-items", async (req, res) => {
       images: images || [],
       startDate,
       endDate,
+      ownsPrize: req.body.ownsPrize, // ✅ add this
+      prizeImage: req.body.prizeImage || null, // ✅ add this
     });
 
     const net = newItem.desiredNetPayout;
@@ -701,6 +771,45 @@ app.post("/host-items", async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.post("/api/seller/onBoarding", authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Fetch the user
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (user.role !== "seller") {
+      return res
+        .status(403)
+        .json({ message: "Only sellers can complete onboarding" });
+    }
+
+    // Check if seller profile exists
+    let seller = await Seller.findOne({ userId });
+
+    if (seller && seller.profileCompleted) {
+      return res.status(400).json({ message: "Profile already completed" });
+    }
+
+    // If seller doesn't exist, create it
+    if (!seller) {
+      seller = new Seller({ userId });
+    }
+
+    // Update seller info and mark completed
+    Object.assign(seller, { ...req.body, profileCompleted: true });
+    await seller.save();
+
+    return res
+      .status(200)
+      .json({ message: "Profile saved successfully", seller });
+  } catch (err) {
+    console.error("Onboarding error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
