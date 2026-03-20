@@ -13,6 +13,11 @@ const webUserSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  status: {
+    enum: ['active', 'inactive', 'banned'],
+    type: String,
+    default: 'active'
+  }
 
 
 }, {createdAt: true, timestamps: true });
