@@ -33,6 +33,7 @@ const userSchema = new mongoose.Schema({
     ref: "User",
 
 },
+profileCompleted: { type: Boolean, default: false },
 
   otpGeneratedAt: Date,
   resetPasswordToken: String,

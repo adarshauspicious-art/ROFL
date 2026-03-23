@@ -132,6 +132,8 @@ app.set("trust proxy", 1);
 //   max: 20,
 // });
 
+
+
 //=============================ROUTES STARTS FROM HERE ================================================
 
 app.get("/", (req, res) => {
@@ -364,8 +366,7 @@ app.post("/reset-password", async (req, res) => {
   }
 });
 
-app.post(
-  "/user/profile-image",
+app.post("/user/profile-image",
   verifyToken,
   upload.single("image"),
   async (req, res) => {
@@ -438,8 +439,48 @@ app.get("/admin/dashboard", verifyToken, authorizeRole("admin"), (req, res) => {
   res.json({ message: "Welcome Admin" });
 });
 
-app.get(
-  "/seller/dashboard",
+app.get('/api/admin/sellers', async (req, res) => {
+  try {
+    // Get page and limit from query params, default to page 1 and 10 sellers per page
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Fetch paginated sellers
+    const sellers = await User.find({ role: "seller" }).select("name email role");
+res.json({ sellers });
+
+    // Get total count for pagination info
+    const totalSellers = await SellerProfile.countDocuments();
+
+    res.json({
+      sellers,
+      page,
+      totalPages: Math.ceil(totalSellers / limit),
+      totalSellers
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/admin/seller/:id', async (req, res) => {
+  try {
+    const { status } = req.body; // Approved / Rejected
+
+    const seller = await SellerProfile.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
+
+    res.json(seller);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/seller/dashboard",
   verifyToken,
   authorizeRole("seller"),
   (req, res) => {
@@ -544,6 +585,7 @@ app.post("/web/user-register", async (req, res) => {
 //     res.status(500).json({ message: "Server error", error: err.message });
 //   }
 // });
+
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -789,24 +831,26 @@ app.post("/api/seller/onBoarding", authMiddleware, async (req, res) => {
     }
 
     // Check if seller profile exists
-    let seller = await Seller.findOne({ userId });
+    let seller = await SellerProfile.findOne({ userId });
 
-    if (seller && seller.profileCompleted) {
-      return res.status(400).json({ message: "Profile already completed" });
-    }
-
-    // If seller doesn't exist, create it
     if (!seller) {
-      seller = new Seller({ userId });
+      // Create seller profile if it doesn't exist
+      seller = new SellerProfile({ userId });
     }
 
-    // Update seller info and mark completed
-    Object.assign(seller, { ...req.body, profileCompleted: true });
+    // Update seller info
+    Object.assign(seller, req.body);
     await seller.save();
+
+    // Mark profile as completed in User schema
+    if (!user.profileCompleted) {
+      user.profileCompleted = true;
+      await user.save();
+    }
 
     return res
       .status(200)
-      .json({ message: "Profile saved successfully", seller });
+      .json({ message: "Profile saved successfully", seller, user });
   } catch (err) {
     console.error("Onboarding error:", err);
     return res.status(500).json({ message: "Server error" });
