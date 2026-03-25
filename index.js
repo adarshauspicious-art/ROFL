@@ -73,26 +73,39 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-const uploadDir = "uploads";
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+// const uploadDir = "uploads";
+// if (!fs.existsSync(uploadDir)) {
+//   fs.mkdirSync(uploadDir);
+// }
 
-const uploadPath = path.join(__dirname, "uploads/images");
+// const uploadPath = path.join(__dirname, "uploads/images");
+// fs.mkdirSync(uploadPath, { recursive: true });
+
+// app.use("/upload", express.static(path.join(__dirname, "uploads")));
+
+// const storage = multer.diskStorage({
+//   // MULTER STORAGE
+//   destination: (req, file, cb) => {
+//     cb(null, uploadPath);
+//   },
+//   filename: (req, file, cb) => {
+//     crypto.randomBytes(12, (err, bytes) => {
+//       if (err) return cb(err);
+//       const filename = bytes.toString("hex") + path.extname(file.originalname);
+//       cb(null, filename);
+//     });
+//   },
+// });
+
+const uploadPath = path.join(__dirname, "uploads");
 fs.mkdirSync(uploadPath, { recursive: true });
 
-app.use("/upload", express.static(path.join(__dirname, "uploads")));
-
 const storage = multer.diskStorage({
-  // MULTER STORAGE
-  destination: (req, file, cb) => {
-    cb(null, uploadPath);
-  },
+  destination: (req, file, cb) => cb(null, uploadPath),
   filename: (req, file, cb) => {
     crypto.randomBytes(12, (err, bytes) => {
       if (err) return cb(err);
-      const filename = bytes.toString("hex") + path.extname(file.originalname);
-      cb(null, filename);
+      cb(null, bytes.toString("hex") + path.extname(file.originalname));
     });
   },
 });
@@ -132,22 +145,24 @@ app.set("trust proxy", 1);
 //   max: 20,
 // });
 
-
-
 //=============================ROUTES STARTS FROM HERE ================================================
 
 app.get("/", (req, res) => {
   res.send("ROFL  Backend is running! 🚀");
 });
 
-app.get("/me", verifyToken, async (req, res) => {
-  const user = await User.findById(req.user.id).select("-password");
+app.get("/api/seller/me", authMiddleware, async (req, res) => {
+  try {
+    const seller = await Seller.findOne({ userId: req.user.id });
 
-  if (!user) {
-    return res.status(404).json({ message: "User not found" });
+    if (!seller) {
+      return res.status(404).json({ message: "Seller not found" });
+    }
+
+    res.json({ seller });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  res.json(user);
 });
 
 app.post("/register", async (req, res) => {
@@ -366,7 +381,8 @@ app.post("/reset-password", async (req, res) => {
   }
 });
 
-app.post("/user/profile-image",
+app.post(
+  "/user/profile-image",
   verifyToken,
   upload.single("image"),
   async (req, res) => {
@@ -439,48 +455,82 @@ app.get("/admin/dashboard", verifyToken, authorizeRole("admin"), (req, res) => {
   res.json({ message: "Welcome Admin" });
 });
 
-app.get('/api/admin/sellers', async (req, res) => {
+app.get("/api/admin/sellers/pending-approvals", async (req, res) => {
   try {
-    // Get page and limit from query params, default to page 1 and 10 sellers per page
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    // Fetch paginated sellers
-    const sellers = await User.find({ role: "seller" }).select("name email role");
-res.json({ sellers });
+    // Fetch SellerProfiles and populate User info
+    const sellers = await SellerProfile.find({ status: "Pending" })
+      .populate("userId", "name email") // only get name and email
+      .skip(skip)
+      .limit(limit);
 
-    // Get total count for pagination info
     const totalSellers = await SellerProfile.countDocuments();
 
+    // Format response
+    const formattedSellers = sellers
+      .filter((s) => s.userId) // skip if userId is null
+      .map((s) => ({
+        id: s._id,
+        name: s.userId.name,
+        email: s.userId.email,
+        submitted: s.status, // Pending / Approved / Rejected
+        createdAt: s.createdAt, // SellerProfile submission date
+        attachment: {
+          govtIdFront: s.attachment?.govtIdFront || null,
+          govtIdBack: s.attachment?.govtIdBack || null,
+          selfieWithId: s.attachment?.selfieWithId || null,
+        },
+      }));
+
     res.json({
-      sellers,
+      id: "pendingSellers",
+      sellers: formattedSellers,
       page,
       totalPages: Math.ceil(totalSellers / limit),
-      totalSellers
+      totalSellers,
     });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
-app.put('/api/admin/seller/:id', async (req, res) => {
+app.patch("/api/admin/sellers/:id/status", async (req, res) => {
   try {
-    const { status } = req.body; // Approved / Rejected
+    const { status } = req.body; // "Approved" or "Rejected"
+    const { id } = req.params;
 
-    const seller = await SellerProfile.findByIdAndUpdate(
-      req.params.id,
+    // Validate status
+    if (!["Approved", "Rejected"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
+
+    // Update seller profile
+    const updatedSeller = await SellerProfile.findByIdAndUpdate(
+      id,
       { status },
-      { new: true }
-    );
+      { new: true },
+    ).populate("userId", "name email");
 
-    res.json(seller);
+    if (!updatedSeller) {
+      return res.status(404).json({ error: "Seller not found" });
+    }
+
+    res.json({
+      message: `Seller has been ${status.toLowerCase()}`,
+      seller: updatedSeller,
+    });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get("/seller/dashboard",
+app.get(
+  "/seller/dashboard",
   verifyToken,
   authorizeRole("seller"),
   (req, res) => {
@@ -530,102 +580,33 @@ app.post("/web/user-register", async (req, res) => {
   }
 });
 
-// app.post("/login", async (req, res) => {
-//   try {
-//     const { email, password } = req.body;
-
-//     // Validate
-//     if (!email || !password) {
-//       return res
-//         .status(400)
-//         .json({ message: "Email and password are required" });
-//     }
-
-//     // Find user by email
-//     const user = await User.findOne({ email });
-//     if (!user) {
-//       return res.status(400).json({ message: "Invalid email or password" });
-//     }
-
-//     // Compare password
-//     const isMatch = await bcrypt.compare(password, user.password);
-//     if (!isMatch) {
-//       return res.status(400).json({ message: "Invalid email or password" });
-//     }
-
-//     // const token = jwt.sign(
-//     //   { id: user._id, email: user.email, role: user.role }, // include role
-//     //   process.env.JWT_SECRET,
-//     //   { expiresIn: "1d" },
-//     // );
-//     const token = jwt.sign(
-//       { id: user._id, role: user.role }, //  IMPORTANT
-//       process.env.JWT_SECRET,
-//       { expiresIn: "1h" },
-//     );
-//     res.cookie("token", token, {
-//       httpOnly: true,
-//       secure: false,
-//       sameSite: "strict",
-//       path: "/",
-//     });
-
-//     // If successful then
-//     res.status(200).json({
-//       message: "Login successful",
-//       token,
-//       user: {
-//         id: user._id,
-//         name: user.name,
-//         email: user.email,
-//         role: user.role, // send role to frontend
-//       },
-//     });
-//   } catch (err) {
-//     res.status(500).json({ message: "Server error", error: err.message });
-//   }
-// });
-
+//============================== LOGIN and LOGOUT ROUTE's ==================================================
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res
-        .status(400)
-        .json({ message: "Email and password are required" });
+      return res.status(400).json({ message: "Email and password are required" });
     }
 
     const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(400).json({ message: "Invalid email or password" });
-    }
+    if (!user) return res.status(400).json({ message: "Invalid email or password" });
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: "Invalid email or password" });
-    }
+    if (!isMatch) return res.status(400).json({ message: "Invalid email or password" });
 
-    const token = jwt.sign(
-      { id: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "1h" },
-    );
+    const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "1h" });
 
-    // ✅ FETCH SELLER DATA
     let seller = null;
     if (user.role === "seller") {
-      seller = await Seller.findOne({ userId: user._id });
+      seller = await SellerProfile.findOne({ userId: user._id });
+
+      // ✅ Ensure profileCompleted is sent
+      user.profileCompleted = seller ? true : false; // agar seller profile exist karta hai, matlab submit ho gaya
     }
 
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: "strict",
-      path: "/",
-    });
+    res.cookie("token", token, { httpOnly: true, secure: false, sameSite: "strict", path: "/" });
 
-    // ✅ SEND seller ALSO
     res.status(200).json({
       message: "Login successful",
       token,
@@ -634,8 +615,9 @@ app.post("/login", async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        profileCompleted: user.profileCompleted, // 🔹 yahi frontend check karega
       },
-      seller, // 🔥 THIS FIXES YOUR ISSUE
+      seller,
     });
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message });
@@ -697,7 +679,7 @@ app.post("/logout", (req, res) => {
   });
   res.status(200).json({ message: "Logged out successfully" });
 });
-
+//============================== HOSTITEMS EITHER BY THE ADMIN OR BY THE SELLER ==================================================
 app.post("/host-items", async (req, res) => {
   try {
     const {
@@ -816,46 +798,160 @@ app.post("/host-items", async (req, res) => {
   }
 });
 
-app.post("/api/seller/onBoarding", authMiddleware, async (req, res) => {
-  try {
-    const userId = req.user.id;
+//============================== SELLER ONBOARDING ROUTE ==================================================
 
-    // Fetch the user
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
+// app.post("/api/seller/onBoarding", authMiddleware, async (req, res) => {
+//   try {
+//     const userId = req.user.id;
 
-    if (user.role !== "seller") {
+//     // Fetch the user
+//     const user = await User.findById(userId);
+//     if (!user) return res.status(404).json({ message: "User not found" });
+
+//     if (user.role !== "seller") {
+//       return res
+//         .status(403)
+//         .json({ message: "Only sellers can complete onboarding" });
+//     }
+
+//     // Find or create seller profile
+//     let seller = await SellerProfile.findOne({ userId });
+//     if (!seller) {
+//       seller = new SellerProfile({ userId });
+//     }
+
+//     // Update seller fields from request body
+//     Object.assign(seller, req.body);
+
+//     // Ensure attachment object exists
+//     if (!seller.attachment) seller.attachment = {};
+
+//     // Save govt ID strings
+//     if (req.body.govtIdFront) seller.attachment.govtIdFront = req.body.govtIdFront;
+//     if (req.body.govtIdBack) seller.attachment.govtIdBack = req.body.govtIdBack;
+//     if (req.body.selfieWithId) seller.attachment.selfieWithId = req.body.selfieWithId;
+
+//     await seller.save();
+
+//     // Mark profile as completed in User model
+//     if (!user.profileCompleted) {
+//       user.profileCompleted = true;
+//       await user.save();
+//     }
+
+//     return res.status(200).json({
+//       message: "Profile saved successfully",
+//       seller,
+//       user,
+//     });
+//   } catch (err) {
+//     console.error("Onboarding error:", err);
+//     return res.status(500).json({ message: "Server error" });
+//   }
+// });
+app.post(
+  "/api/seller/onBoarding",
+  authMiddleware,
+  upload.fields([
+    { name: "govtIdFront", maxCount: 1 },
+    { name: "govtIdBack", maxCount: 1 },
+    { name: "selfieWithId", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    try {
+      const userId = req.user.id;
+
+      const user = await User.findById(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      if (user.role !== "seller")
+        return res
+          .status(403)
+          .json({ message: "Only sellers can complete onboarding" });
+
+      let seller = await SellerProfile.findOne({ userId });
+      if (!seller) seller = new SellerProfile({ userId });
+
+      // Save text fields
+      const {
+        firstName,
+        lastName,
+        businessName,
+        email,
+        phoneNumber,
+        address,
+        state,
+        city,
+        zipCode,
+      } = req.body;
+      Object.assign(seller, {
+        firstName,
+        lastName,
+        businessName,
+        email,
+        phoneNumber,
+        address,
+        state,
+        city,
+        zipCode,
+      });
+
+      if (!seller.attachment) seller.attachment = {};
+
+      // Helper to upload file to Cloudinary
+      const uploadToCloudinary = (filePath, publicId) =>
+        new Promise((resolve, reject) => {
+          cloudinary.uploader.upload(
+            filePath,
+            {
+              folder: "onBoarding_images",
+              public_id: publicId,
+            },
+            (err, result) => {
+              if (err) return reject(err);
+              resolve(result.secure_url);
+            },
+          );
+        });
+
+      // Upload files if they exist
+      if (req.files.govtIdFront) {
+        seller.attachment.govtIdFront = await uploadToCloudinary(
+          req.files.govtIdFront[0].path,
+          `govtIdFront_${userId}_${Date.now()}`,
+        );
+      }
+      if (req.files.govtIdBack) {
+        seller.attachment.govtIdBack = await uploadToCloudinary(
+          req.files.govtIdBack[0].path,
+          `govtIdBack_${userId}_${Date.now()}`,
+        );
+      }
+      if (req.files.selfieWithId) {
+        seller.attachment.selfieWithId = await uploadToCloudinary(
+          req.files.selfieWithId[0].path,
+          `selfieWithId_${userId}_${Date.now()}`,
+        );
+      }
+
+      await seller.save();
+
+      if (!user.profileCompleted) {
+        user.profileCompleted = true; // 🔹 ye sirf frontend logic ke liye flag
+        await user.save();
+      }
+
       return res
-        .status(403)
-        .json({ message: "Only sellers can complete onboarding" });
+        .status(200)
+        .json({ message: "Profile saved successfully", seller, user });
+    } catch (err) {
+      console.error("Onboarding error:", err);
+      return res
+        .status(500)
+        .json({ message: "Server error", error: err.message });
     }
-
-    // Check if seller profile exists
-    let seller = await SellerProfile.findOne({ userId });
-
-    if (!seller) {
-      // Create seller profile if it doesn't exist
-      seller = new SellerProfile({ userId });
-    }
-
-    // Update seller info
-    Object.assign(seller, req.body);
-    await seller.save();
-
-    // Mark profile as completed in User schema
-    if (!user.profileCompleted) {
-      user.profileCompleted = true;
-      await user.save();
-    }
-
-    return res
-      .status(200)
-      .json({ message: "Profile saved successfully", seller, user });
-  } catch (err) {
-    console.error("Onboarding error:", err);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
+  },
+);
+//============================== SELLER ONBOARDING ROUTE ==================================================
 
 app.use((err, req, res, next) => {
   res.status(400).json({
