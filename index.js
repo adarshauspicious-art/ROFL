@@ -24,6 +24,8 @@ import WebUser from "./model/webUsers.js";
 import hostItem from "./model/hostItems.js";
 import SellerProfile from "./model/sellerProfile.js";
 import Seller from "./model/sellerProfile.js";
+
+
 dotenv.config();
 const router = express.Router();
 //==============================  ===========================================================================================
@@ -451,8 +453,71 @@ app.get("/user/me", verifyToken, async (req, res) => {
   }
 });
 
-app.get("/admin/dashboard", verifyToken, authorizeRole("admin"), (req, res) => {
-  res.json({ message: "Welcome Admin" });
+app.get("/api/admin/dashboard", async (req, res) => {
+  try {
+    const now = new Date();
+
+    // 1. Sellers stats
+    const totalSellers = await Seller.countDocuments();
+    const pendingApprovals = await Seller.countDocuments({ status: "Pending" });
+
+    // 2. Live items (start <= now <= end)
+    const liveItems = await hostItem.countDocuments({
+      startDate: { $lte: now },
+      endDate: { $gte: now },
+    });
+
+    // 3. Active items for table
+    const activeItemsRaw = await hostItem.find({
+      startDate: { $lte: now },
+      endDate: { $gte: now },
+    })
+      .select("itemTitle startDate endDate")
+      .limit(10);
+
+    const activeItems = activeItemsRaw.map((item, i) => ({
+       id: item._id,
+      srNo: i + 1,
+      name: item.itemTitle,
+      startDate: item.startDate,
+      timeline:
+        Math.max(0, Math.ceil((new Date(item.endDate) - now) / (1000 * 60 * 60 * 24))) +
+        " days",
+    }));
+
+    // 4. Winners this month (items that have winner.date this month)
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const winnersThisMonth = await hostItem.countDocuments({
+      "winner.date": { $gte: firstOfMonth },
+    });
+
+    // 5. Recent winners (latest 10 items that have a winner)
+    const recentWinnersRaw = await hostItem.find({ "winner.name": { $exists: true } })
+      .sort({ "winner.date": -1 })
+      .limit(10)
+      .select("winner itemTitle");
+
+    const winners = recentWinnersRaw.map((item) => ({
+      name: item.winner.name,
+      itemTitle: item.itemTitle,
+      date: item.winner.date,
+    }));
+
+    // 6. Send response
+    res.json({
+      stats: {
+        totalSellers,
+        liveItems,
+        pendingApprovals,
+        winnersThisMonth,
+      },
+      activeItems,
+      winners,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get("/api/admin/sellers/pending-approvals", async (req, res) => {
@@ -586,16 +651,24 @@ app.post("/login", async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ message: "Email and password are required" });
+      return res
+        .status(400)
+        .json({ message: "Email and password are required" });
     }
 
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: "Invalid email or password" });
+    if (!user)
+      return res.status(400).json({ message: "Invalid email or password" });
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: "Invalid email or password" });
+    if (!isMatch)
+      return res.status(400).json({ message: "Invalid email or password" });
 
-    const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "1h" });
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" },
+    );
 
     let seller = null;
     if (user.role === "seller") {
@@ -605,7 +678,12 @@ app.post("/login", async (req, res) => {
       user.profileCompleted = seller ? true : false; // agar seller profile exist karta hai, matlab submit ho gaya
     }
 
-    res.cookie("token", token, { httpOnly: true, secure: false, sameSite: "strict", path: "/" });
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: false,
+      sameSite: "strict",
+      path: "/",
+    });
 
     res.status(200).json({
       message: "Login successful",

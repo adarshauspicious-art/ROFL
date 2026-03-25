@@ -38,6 +38,10 @@ const hostItemSchema = new mongoose.Schema(
     endDate: {
       type: Date,
     },
+    winner: {
+  name: String,
+  date: Date
+},
   },
   { timestamps: true, createdAt: true },
 );

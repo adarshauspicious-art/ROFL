@@ -9,10 +9,10 @@ const sellerSchema = new mongoose.Schema(
       unique: true,
     },
     status: {
-  type: String,
-  enum: ["Pending", "Approved", "Rejected"],
-  default: "Pending",
-},
+      type: String,
+      enum: ["Pending", "Approved", "Rejected"],
+      default: "Pending",
+    },
     rejectionReason: {
       type: String,
     },
