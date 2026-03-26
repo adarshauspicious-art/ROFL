@@ -2,6 +2,10 @@ import mongoose from "mongoose";
 
 const hostItemSchema = new mongoose.Schema(
   {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
     itemTitle: {
       type: String,
       required: true,
@@ -39,9 +43,9 @@ const hostItemSchema = new mongoose.Schema(
       type: Date,
     },
     winner: {
-  name: String,
-  date: Date
-},
+      name: String,
+      date: Date,
+    },
   },
   { timestamps: true, createdAt: true },
 );
