@@ -482,7 +482,7 @@ app.get("/api/admin/dashboard", async (req, res) => {
       timeline:
         Math.max(
           0,
-          Math.ceil((new Date(item.endDate) - now) / (1000 * 60 * 60 * 24))
+          Math.ceil((new Date(item.endDate) - now) / (1000 * 60 * 60 * 24)),
         ) + " days",
     }));
 
@@ -574,13 +574,14 @@ app.get("/api/admin/sellers", async (req, res) => {
       return res.status(400).json({ error: "Status is required" });
     }
 
-    let sellersRaw = await Seller.find({ status })
+    let sellersRaw = await Seller.find({ status }) // its a raw data jo database se aayega, usko hum format karenge neeche, taki frontend me use karna easy ho jaye
       .populate("userId", "email")
       .limit(50);
 
     let sellers = [];
 
-    //  ACTIVE SELLERS
+    //  ACTIVE SELLERS, yaha niche humne jitne b active ya approved sellers hai un saro ko raw data se formet m convert kiya taki jitne b active ya approved sellers hai unka data frontend me easily show ho jaye, aur unke sath sath unka timeline bhi show ho jaye ki unhone kitne dino se apna account approve karwaya hua hai
+
     if (status === "Approved") {
       sellers = sellersRaw.map((seller, index) => ({
         srNo: index + 1,
@@ -591,7 +592,9 @@ app.get("/api/admin/sellers", async (req, res) => {
         timeline:
           Math.max(
             0,
-            Math.ceil((now - new Date(seller.createdAt)) / (1000 * 60 * 60 * 24))
+            Math.ceil(
+              (now - new Date(seller.createdAt)) / (1000 * 60 * 60 * 24),
+            ),
           ) + " days",
         action: "View / Block",
       }));
@@ -600,7 +603,7 @@ app.get("/api/admin/sellers", async (req, res) => {
     //  PENDING SELLERS
     else if (status === "Pending") {
       sellers = sellersRaw.map((seller) => ({
-         _id: seller._id,
+        _id: seller._id,
         name: `${seller.firstName} ${seller.lastName}`,
         email: seller.userId?.email || "N/A",
         submitted: seller.createdAt,
@@ -621,7 +624,6 @@ app.get("/api/admin/sellers", async (req, res) => {
     }
 
     res.json({ sellers });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
