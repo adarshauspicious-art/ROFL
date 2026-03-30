@@ -24,8 +24,14 @@ import WebUser from "./model/webUsers.js";
 import hostItem from "./model/hostItems.js";
 import SellerProfile from "./model/sellerProfile.js";
 import Seller from "./model/sellerProfile.js";
+import Stripe from "stripe";
 
 dotenv.config();
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: '2023-08-16',
+});
+
 const router = express.Router();
 //==============================  ===========================================================================================
 
@@ -946,55 +952,6 @@ app.post("/host-items", authMiddleware, async (req, res) => {
 
 //============================== SELLER ONBOARDING ROUTE ==================================================
 
-// app.post("/api/seller/onBoarding", authMiddleware, async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-
-//     // Fetch the user
-//     const user = await User.findById(userId);
-//     if (!user) return res.status(404).json({ message: "User not found" });
-
-//     if (user.role !== "seller") {
-//       return res
-//         .status(403)
-//         .json({ message: "Only sellers can complete onboarding" });
-//     }
-
-//     // Find or create seller profile
-//     let seller = await SellerProfile.findOne({ userId });
-//     if (!seller) {
-//       seller = new SellerProfile({ userId });
-//     }
-
-//     // Update seller fields from request body
-//     Object.assign(seller, req.body);
-
-//     // Ensure attachment object exists
-//     if (!seller.attachment) seller.attachment = {};
-
-//     // Save govt ID strings
-//     if (req.body.govtIdFront) seller.attachment.govtIdFront = req.body.govtIdFront;
-//     if (req.body.govtIdBack) seller.attachment.govtIdBack = req.body.govtIdBack;
-//     if (req.body.selfieWithId) seller.attachment.selfieWithId = req.body.selfieWithId;
-
-//     await seller.save();
-
-//     // Mark profile as completed in User model
-//     if (!user.profileCompleted) {
-//       user.profileCompleted = true;
-//       await user.save();
-//     }
-
-//     return res.status(200).json({
-//       message: "Profile saved successfully",
-//       seller,
-//       user,
-//     });
-//   } catch (err) {
-//     console.error("Onboarding error:", err);
-//     return res.status(500).json({ message: "Server error" });
-//   }
-// });
 app.post(
   "/api/seller/onBoarding",
   authMiddleware,
@@ -1098,6 +1055,26 @@ app.post(
   },
 );
 //============================== SELLER ONBOARDING ROUTE ==================================================
+
+
+app.post("/create-payment-intent", async (req, res) => {
+  try {
+    const { amount } = req.body; // amount in cents, e.g., 500 for $5.00
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount,
+      currency: "usd",
+    });
+    res.json({ clientSecret: paymentIntent.client_secret });
+  } catch (error) {
+    console.error("Stripe error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 
 app.use((err, req, res, next) => {
   res.status(400).json({
