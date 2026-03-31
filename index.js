@@ -1097,6 +1097,69 @@ app.post(
     }
   },
 );
+
+//===============================Payment Route ==================================================
+app.post('/create-payment-intent', async (req, res) => {
+  const { amount, currency } = req.body; // amount in smallest currency unit (e.g., cents)
+
+  try {
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount,
+      currency,
+      // optional: automatic_payment_methods: {enabled: true} for easier integration
+    });
+
+    res.send({
+      clientSecret: paymentIntent.client_secret,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+app.post('/create-checkout-session', async (req, res) => {
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'payment',
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: 'Event Ticket',
+            },
+            unit_amount: 5000, // $50
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: 'https://yourdomain.com/success',
+      cancel_url: 'https://yourdomain.com/cancel',
+    });
+
+    res.json({ url: session.url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+app.post('/webhook', express.raw({type: 'application/json'}), (req, res) => {
+  const event = req.body;
+
+  if (event.type === 'checkout.session.completed') {
+    console.log('Payment successful!');
+    // 👉 mark ticket as paid in DB
+  }
+
+  res.send();
+});
+
+
+
+
 //============================== SELLER ONBOARDING ROUTE ==================================================
 
 app.use((err, req, res, next) => {
