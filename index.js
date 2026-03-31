@@ -32,7 +32,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-08-16',
 });
 
-const router = express.Router();
+const router = express.Router();  
 //==============================  ===========================================================================================
 
 console.log("Cloudinary config:", cloudinary.config());
@@ -1055,87 +1055,78 @@ app.post(
   },
 );
 
-//===============================Payment Route ==================================================
-app.post('/create-payment-intent', async (req, res) => {
-  const { amount, currency } = req.body; // amount in smallest currency unit (e.g., cents)
+//===============================Payment Stripe Route ==================================================
 
-  try {
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount,
-      currency,
-      // optional: automatic_payment_methods: {enabled: true} for easier integration
-    });
+// app.post("/create-payment-intent", async (req, res) => {
+//   try {
+//     const { amount } = req.body; // amount in cents
+//     if (!amount || amount <= 0) {
+//       return res.status(400).json({ error: "Invalid amount" });
+//     }
 
-    res.send({
-      clientSecret: paymentIntent.client_secret,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+//     const paymentIntent = await stripe.paymentIntents.create({
+//       amount,
+//       currency: "usd",
+//     });
+
+//     res.json({ clientSecret: paymentIntent.client_secret });
+//   } catch (error) {
+//     console.error("Stripe error:", error);
+//     res.status(500).json({ error: error.message });
+//   }
+// });
+
+// app.post("/web/create-payment-intent", async (req, res) => {
+//   try {
+//     const { amount } = req.body; // amount in cents
+//     if (!amount || amount <= 0) {
+//       return res.status(400).json({ error: "Invalid amount" });
+//     }
+
+//     const paymentIntent = await stripe.paymentIntents.create({
+//       amount,
+//       currency: "usd",
+//     });
+
+//     res.json({ clientSecret: paymentIntent.client_secret });
+//   } catch (error) {
+//     console.error("Stripe error:", error);
+//     res.status(500).json({ error: error.message });
+//   }
+// });
 
 
-app.post('/create-checkout-session', async (req, res) => {
+app.post("/create-checkout-session", async (req, res) => {
   try {
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      mode: 'payment',
+      payment_method_types: ["card"],
       line_items: [
         {
           price_data: {
-            currency: 'usd',
-            product_data: {
-              name: 'Event Ticket',
-            },
-            unit_amount: 5000, // $50
+            currency: "usd",
+            product_data: { name: "Event Ticket" },
+            unit_amount: 1000, 
           },
           quantity: 1,
         },
       ],
-      success_url: 'https://yourdomain.com/success',
-      cancel_url: 'https://yourdomain.com/cancel',
+      mode: "payment",
+      success_url: "http://localhost:3000/web/stripe/sucess",
+      cancel_url: "http://localhost:3000/web/stripe/cancel",
     });
 
+    // Instead of session.id, return session.url
     res.json({ url: session.url });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
 });
-
-
-app.post('/webhook', express.raw({type: 'application/json'}), (req, res) => {
-  const event = req.body;
-
-  if (event.type === 'checkout.session.completed') {
-    console.log('Payment successful!');
-    // 👉 mark ticket as paid in DB
-  }
-
-  res.send();
-});
-
-
 
 
 //============================== SELLER ONBOARDING ROUTE ==================================================
 
 
-app.post("/create-payment-intent", async (req, res) => {
-  try {
-    const { amount } = req.body; // amount in cents, e.g., 500 for $5.00
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: "Invalid amount" });
-    }
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount,
-      currency: "usd",
-    });
-    res.json({ clientSecret: paymentIntent.client_secret });
-  } catch (error) {
-    console.error("Stripe error:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 
 
