@@ -21,11 +21,13 @@ import dotenv from "dotenv";
 import verifyToken from "./middleware/verifyToken.js";
 import authorizeRole from "./middleware/authorizeRole.js";
 import WebUser from "./model/webUsers.js";
-import hostItem from "./model/hostItems.js";
 import SellerProfile from "./model/sellerProfile.js";
 import Seller from "./model/sellerProfile.js";
 import Stripe from "stripe";
 import Ticket from "./model/ticketSchema.js";
+import product from "./model/product.js";
+import Order from "./model/orderSchema.js";
+import HostItem from "./model/hostItems.js";
 
 dotenv.config();
 
@@ -468,17 +470,16 @@ app.get("/api/admin/dashboard", async (req, res) => {
     const pendingApprovals = await Seller.countDocuments({ status: "Pending" });
 
     // 2. Live items (start <= now <= end)
-    const liveItems = await hostItem.countDocuments({
+    const liveItems = await HostItem.countDocuments({
       startDate: { $lte: now },
       endDate: { $gte: now },
     });
 
     // 3. Active items for table (latest 10)
-    const activeItemsRaw = await hostItem
-      .find({
-        startDate: { $lte: now },
-        endDate: { $gte: now },
-      })
+    const activeItemsRaw = await HostItem.find({
+      startDate: { $lte: now },
+      endDate: { $gte: now },
+    })
       .select("itemTitle startDate endDate")
       .limit(10);
 
@@ -495,13 +496,14 @@ app.get("/api/admin/dashboard", async (req, res) => {
 
     // 4. Winners this month
     const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const winnersThisMonth = await hostItem.countDocuments({
+    const winnersThisMonth = await HostItem.countDocuments({
       "winner.date": { $gte: firstOfMonth },
     });
 
     // 5. Recent winners (latest 5)
-    const recentWinnersRaw = await hostItem
-      .find({ "winner.name": { $exists: true } })
+    const recentWinnersRaw = await HostItem.find({
+      "winner.name": { $exists: true },
+    })
       .sort({ "winner.date": -1 })
       .limit(5)
       .select("winner itemTitle");
@@ -832,6 +834,125 @@ app.post("/logout", (req, res) => {
   res.status(200).json({ message: "Logged out successfully" });
 });
 //============================== HOSTITEMS EITHER BY THE ADMIN OR BY THE SELLER ==================================================
+// app.post("/host-items", authMiddleware, async (req, res) => {
+//   try {
+//     const {
+//       itemTitle,
+//       selectCategory,
+//       desiredNetPayout,
+//       selectTimeline,
+//       description,
+//       images,
+//       ownsPrize,
+//       prizeImage,
+//     } = req.body;
+
+//     if (
+//       !itemTitle ||
+//       !selectCategory ||
+//       !desiredNetPayout ||
+//       !selectTimeline ||
+//       !description
+//     ) {
+//       return res
+//         .status(400)
+//         .json({ success: false, message: "Missing required fields" });
+//     }
+
+//     const timelineDays = parseInt(selectTimeline); // automatically gets 7, 15, 21, 30
+
+//     const startDate = new Date();
+//     const endDate = new Date(startDate);
+//     endDate.setDate(endDate.getDate() + timelineDays);
+//     if (req.body.ownsPrize && !req.body.prizeImage) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Prize image required if you own the prize",
+//       });
+//     }
+//     const userId = req.user.id;
+//     const newItem = await hostItem.create({
+//       itemTitle,
+//       selectCategory,
+//       desiredNetPayout: Number(desiredNetPayout),
+//       selectTimeline,
+//       description,
+//       images: images || [],
+//       startDate,
+//       endDate,
+//       ownsPrize: req.body.ownsPrize, //  add this
+//       prizeImage: req.body.prizeImage || null, //    add this
+//       userId,
+//     });
+
+//     const net = newItem.desiredNetPayout;
+
+//     // Step 1: Ticket Price
+//     let ticketPrice;
+//     if (net <= 500) {
+//       ticketPrice = 5;
+//     } else if (net <= 1000) {
+//       ticketPrice = 10;
+//     } else if (net <= 4999) {
+//       ticketPrice = 25;
+//     } else if (net <= 24999) {
+//       ticketPrice = 50;
+//     } else {
+//       ticketPrice = 100;
+//     }
+
+//     // Step 2: Platform Fee
+//     let platformFee;
+//     if (net <= 50000) {
+//       platformFee = 0.1 * net;
+//     } else if (net <= 100000) {
+//       platformFee = 0.1 * 50000 + 0.05 * (net - 50000);
+//     } else {
+//       platformFee = 0.1 * 50000 + 0.05 * 50000 + 0.025 * (net - 100000);
+//     }
+
+//     // Step 3: Buffer
+//     const buffer = Math.max(0.05 * net, 10);
+
+//     // Step 4: Base
+//     const base = net + platformFee + buffer;
+
+//     // Step 5: Processing Fee Loop
+//     let pot = base;
+//     while (true) {
+//       const newPot = base + 0.035 * pot;
+//       if (Math.abs(newPot - pot) < 1) break;
+//       pot = newPot;
+//     }
+
+//     // Step 6: Total Tickets (Spots)
+//     const totalTickets = Math.ceil(pot / ticketPrice);
+//     const totalPot = totalTickets * ticketPrice;
+
+//     // Step 7: Remaining Fees
+//     const processingFee = parseFloat((0.035 * totalPot).toFixed(2));
+//     const irsWithholding = parseFloat((0.25 * totalPot).toFixed(2));
+
+//     const calculations = {
+//       desiredNetPayout: net,
+//       ticketPrice,
+//       totalTickets, // ✅ added total tickets
+//       totalSpots: totalTickets, // optional if you still want spots
+//       totalPot,
+//       platformFee: parseFloat(platformFee.toFixed(2)),
+//       processingFee,
+//       irsWithholding,
+//     };
+
+//     res.status(201).json({
+//       success: true,
+//       data: { ...newItem.toObject(), calculations },
+//     });
+//   } catch (error) {
+//     res.status(500).json({ success: false, message: error.message });
+//   }
+// });
+
 app.post("/host-items", authMiddleware, async (req, res) => {
   try {
     const {
@@ -857,49 +978,19 @@ app.post("/host-items", authMiddleware, async (req, res) => {
         .json({ success: false, message: "Missing required fields" });
     }
 
-    const timelineDays = parseInt(selectTimeline); // automatically gets 7, 15, 21, 30
+    const net = Number(desiredNetPayout);
 
-    const startDate = new Date();
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + timelineDays);
-    if (req.body.ownsPrize && !req.body.prizeImage) {
-      return res.status(400).json({
-        success: false,
-        message: "Prize image required if you own the prize",
-      });
-    }
-    const userId = req.user.id;
-    const newItem = await hostItem.create({
-      itemTitle,
-      selectCategory,
-      desiredNetPayout: Number(desiredNetPayout),
-      selectTimeline,
-      description,
-      images: images || [],
-      startDate,
-      endDate,
-      ownsPrize: req.body.ownsPrize, //  add this
-      prizeImage: req.body.prizeImage || null, //    add this
-      userId,
-    });
+    // 🧠 ---------------- CALCULATIONS FIRST ----------------
 
-    const net = newItem.desiredNetPayout;
-
-    // Step 1: Ticket Price
+    // Ticket Price
     let ticketPrice;
-    if (net <= 500) {
-      ticketPrice = 5;
-    } else if (net <= 1000) {
-      ticketPrice = 10;
-    } else if (net <= 4999) {
-      ticketPrice = 25;
-    } else if (net <= 24999) {
-      ticketPrice = 50;
-    } else {
-      ticketPrice = 100;
-    }
+    if (net <= 500) ticketPrice = 5;
+    else if (net <= 1000) ticketPrice = 10;
+    else if (net <= 4999) ticketPrice = 25;
+    else if (net <= 24999) ticketPrice = 50;
+    else ticketPrice = 100;
 
-    // Step 2: Platform Fee
+    // Platform Fee
     let platformFee;
     if (net <= 50000) {
       platformFee = 0.1 * net;
@@ -909,13 +1000,9 @@ app.post("/host-items", authMiddleware, async (req, res) => {
       platformFee = 0.1 * 50000 + 0.05 * 50000 + 0.025 * (net - 100000);
     }
 
-    // Step 3: Buffer
     const buffer = Math.max(0.05 * net, 10);
-
-    // Step 4: Base
     const base = net + platformFee + buffer;
 
-    // Step 5: Processing Fee Loop
     let pot = base;
     while (true) {
       const newPot = base + 0.035 * pot;
@@ -923,19 +1010,54 @@ app.post("/host-items", authMiddleware, async (req, res) => {
       pot = newPot;
     }
 
-    // Step 6: Total Tickets (Spots)
     const totalTickets = Math.ceil(pot / ticketPrice);
     const totalPot = totalTickets * ticketPrice;
 
-    // Step 7: Remaining Fees
     const processingFee = parseFloat((0.035 * totalPot).toFixed(2));
     const irsWithholding = parseFloat((0.25 * totalPot).toFixed(2));
+
+    // 🧠 -----------------------------------------------------
+
+    const timelineDays = parseInt(selectTimeline);
+    const startDate = new Date();
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + timelineDays);
+
+    if (ownsPrize && !prizeImage) {
+      return res.status(400).json({
+        success: false,
+        message: "Prize image required if you own the prize",
+      });
+    }
+
+    const userId = req.user.id;
+
+    // ✅ SAVE EVERYTHING IN DB
+    const newItem = await HostItem.create({
+      itemTitle,
+      selectCategory,
+      desiredNetPayout: net,
+      selectTimeline,
+      description,
+      images: images || [],
+      startDate,
+      endDate,
+      ownsPrize,
+      prizeImage: prizeImage || null,
+      userId,
+
+      // 🔥 ADD THESE
+      ticketPrice,
+      totalTickets,
+      availableTickets: totalTickets,
+      totalPot,
+    });
 
     const calculations = {
       desiredNetPayout: net,
       ticketPrice,
-      totalTickets, // ✅ added total tickets
-      totalSpots: totalTickets, // optional if you still want spots
+      totalTickets,
+      totalSpots: totalTickets,
       totalPot,
       platformFee: parseFloat(platformFee.toFixed(2)),
       processingFee,
@@ -950,7 +1072,6 @@ app.post("/host-items", authMiddleware, async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
-
 //============================== SELLER ONBOARDING ROUTE ==================================================
 
 app.post(
@@ -1056,36 +1177,154 @@ app.post(
   },
 );
 
+//===============================Testing mode Payment Stripe Route ==================================================
+
+// this is the testing mode api with the static data from the backend
+
+// app.post("/create-checkout-session", async (req, res) => {
+//   try {
+//     // Hardcoded test product
+//     const session = await stripe.checkout.sessions.create({
+//       payment_method_types: ["card"],
+//       line_items: [
+//         {
+//           price_data: {
+//             currency: "usd",
+//             product_data: { name: "Test Ticket 🎫" },
+//             unit_amount: 500 * 100, // $5.00 in cents
+//           },
+//           quantity: 1,
+//         },
+//       ],
+//       mode: "payment",
+//       success_url: "http://localhost:3000/web/stripe/sucess", // can be any page
+//       cancel_url: "http://localhost:3000/web/stripe/cancel",   // can be any page
+//     });
+
+//     res.json({ url: session.url }); // Stripe Checkout page URL
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
 //===============================Payment Stripe Route ==================================================
 
-
-
 app.post("/create-checkout-session", async (req, res) => {
+  const { itemId, quantity, userId } = req.body;
+
   try {
-    // Hardcoded test product
+    const item = await HostItem.findOneAndUpdate(
+      {
+        _id: itemId,
+        availableTickets: { $gte: quantity },
+      },
+      {
+        $inc: { availableTickets: -quantity },
+      },
+      { new: true },
+    );
+
+    if (!item) {
+      return res.status(400).json({ error: "Sold out" });
+    }
+
+    const totalAmount = item.ticketPrice * quantity;
+
+    const newOrder = await Order.create({
+      userId,
+      itemId,
+      quantity,
+      totalAmount: totalAmount, // ✅ match schema
+    });
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: [
         {
           price_data: {
             currency: "usd",
-            product_data: { name: "Test Ticket 🎫" },
-            unit_amount: 500 * 100, // $5.00 in cents
+            product_data: { name: item.itemTitle },
+            unit_amount: item.ticketPrice * 100,
           },
-          quantity: 1,
+          quantity: quantity,
         },
       ],
       mode: "payment",
-      success_url: "http://localhost:3000/web/stripe/sucess", // can be any page
-      cancel_url: "http://localhost:3000/web/stripe/cancel",   // can be any page
+      success_url: `http://localhost:3000/web/stripe/sucess?orderId=${newOrder._id}`,
+      cancel_url: `http://localhost:3000/web/stripe/cancel`,
+      metadata: {
+        orderId: newOrder._id.toString(),
+      },
     });
 
-    res.json({ url: session.url }); // Stripe Checkout page URL
+    newOrder.stripeSessionId = session.id;
+    await newOrder.save();
+
+    res.json({ url: session.url });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
+
+app.get("/item/:id", async (req, res) => {
+  try {
+    const item = await HostItem.findById(req.params.id);
+
+    if (!item) {
+      return res.status(404).json({ error: "Item not found" });
+    }
+
+    res.json(item);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/items", async (req, res) => {
+  try {
+    const items = await HostItem.find();
+    res.json(items);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post(
+  "/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    let event;
+
+    try {
+      const sig = req.headers["stripe-signature"];
+
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        process.env.STRIPE_WEBHOOK_SECRET,
+      );
+    } catch (err) {
+      console.log("❌ Webhook signature verification failed.", err.message);
+      return res.sendStatus(400);
+    }
+
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+
+      const orderId = session.metadata.orderId;
+
+      await Order.findByIdAndUpdate(orderId, {
+        status: "paid",
+      });
+
+      console.log("✅ Payment stored in DB");
+    }
+
+    res.sendStatus(200);
+  },
+);
 
 //============================== SELLER ONBOARDING ROUTE ==================================================
 

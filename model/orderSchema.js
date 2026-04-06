@@ -1,4 +1,5 @@
-import moongose from "mongoose";
+import mongoose from "mongoose";
+
 const orderSchema = new mongoose.Schema(
   {
     userId: String,
@@ -15,6 +16,7 @@ const orderSchema = new mongoose.Schema(
     stripeSessionId: String,
     expiresAt: Date,
   },
-  { timestamps: true },
+  { timestamps: true }
 );
-export default moongose.model("Order", orderSchema);
+
+export default mongoose.model("Order", orderSchema);
