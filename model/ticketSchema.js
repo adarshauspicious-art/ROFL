@@ -13,6 +13,6 @@ const ticketSchema = new mongoose.Schema(
     startDate: Date,
     endDate: Date,
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 export default mongoose.model("Ticket", ticketSchema);

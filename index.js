@@ -25,6 +25,7 @@ import hostItem from "./model/hostItems.js";
 import SellerProfile from "./model/sellerProfile.js";
 import Seller from "./model/sellerProfile.js";
 import Stripe from "stripe";
+import Ticket from "./model/ticketSchema.js";
 
 dotenv.config();
 
@@ -1057,129 +1058,29 @@ app.post(
 
 //===============================Payment Stripe Route ==================================================
 
-// app.post("/create-payment-intent", async (req, res) => {
-//   try {
-//     const { amount } = req.body; // amount in cents
-//     if (!amount || amount <= 0) {
-//       return res.status(400).json({ error: "Invalid amount" });
-//     }
 
-//     const paymentIntent = await stripe.paymentIntents.create({
-//       amount,
-//       currency: "usd",
-//     });
-
-//     res.json({ clientSecret: paymentIntent.client_secret });
-//   } catch (error) {
-//     console.error("Stripe error:", error);
-//     res.status(500).json({ error: error.message });
-//   }
-// });
-
-// app.post("/web/create-payment-intent", async (req, res) => {
-//   try {
-//     const { amount } = req.body; // amount in cents
-//     if (!amount || amount <= 0) {
-//       return res.status(400).json({ error: "Invalid amount" });
-//     }
-
-//     const paymentIntent = await stripe.paymentIntents.create({
-//       amount,
-//       currency: "usd",
-//     });
-
-//     res.json({ clientSecret: paymentIntent.client_secret });
-//   } catch (error) {
-//     console.error("Stripe error:", error);
-//     res.status(500).json({ error: error.message });
-//   }
-// });
-
-// app.post("/create-checkout-session", async (req, res) => {
-//   try {
-//     const session = await stripe.checkout.sessions.create({
-//       payment_method_types: ["card"],
-//       line_items: [
-//         {
-//           price_data: {
-//             currency: "usd",
-//             product_data: { name: item.itemTitle },
-//             unit_amount: item.price * 100,
-//           },
-//           quantity,
-//         },
-//       ],
-//       mode: "payment",
-//       success_url: `http://localhost:3000/web/stripe/success?orderId=${order._id}`,
-//       cancel_url: `http://localhost:3000/web/stripe/cancel`,
-//       metadata: {
-//         orderId: order._id.toString(),
-//       },
-//     });
-
-//     // Instead of session.id, return session.url
-//     res.json({ url: session.url });
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({ error: error.message });
-//   }
-// });
 
 app.post("/create-checkout-session", async (req, res) => {
   try {
-    const { itemId, quantity, userId } = req.body;
-
-    // 1. Lock stock
-    const item = await Ticket.findOneAndUpdate(
-      {
-        _id: itemId,
-        availableStock: { $gte: quantity },
-      },
-      {
-        $inc: { availableStock: -quantity },
-      },
-      { new: true },
-    );
-
-    if (!item) {
-      return res.status(400).json({ message: "Sold Out" });
-    }
-
-    // 2. Create order
-    const order = await order.create({
-      userId,
-      itemId,
-      quantity,
-      totalAmount: item.price * quantity,
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-    });
-
-    // 3. Create Stripe session
+    // Hardcoded test product
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: [
         {
           price_data: {
             currency: "usd",
-            product_data: { name: item.itemTitle },
-            unit_amount: item.price * 100,
+            product_data: { name: "Test Ticket 🎫" },
+            unit_amount: 500 * 100, // $5.00 in cents
           },
-          quantity,
+          quantity: 1,
         },
       ],
       mode: "payment",
-      success_url: `http://localhost:3000/web/stripe/success?orderId=${order._id}`,
-      cancel_url: `http://localhost:3000/web/stripe/cancel`,
-      metadata: {
-        orderId: order._id.toString(),
-      },
+      success_url: "http://localhost:3000/web/stripe/sucess", // can be any page
+      cancel_url: "http://localhost:3000/web/stripe/cancel",   // can be any page
     });
 
-    // save session id
-    order.stripeSessionId = session.id;
-    await order.save();
-
-    res.json({ url: session.url });
+    res.json({ url: session.url }); // Stripe Checkout page URL
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
