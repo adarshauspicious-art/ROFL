@@ -1,12 +1,17 @@
 import mongoose from "mongoose";
 const ticketSchema = new mongoose.Schema(
   {
-    title: {
-      userId: String,
-      ticketes: Number,
-      amount: Number,
-      status: String,
-    },
+    userId: String,
+    itemTitle: String,
+    selectCategory: String,
+    desiredNetPayout: Number,
+    description: String,
+    price: Number,
+    totalStock: Number,
+    availableStock: Number,
+
+    startDate: Date,
+    endDate: Date,
   },
   { timestamps: true },
 );
