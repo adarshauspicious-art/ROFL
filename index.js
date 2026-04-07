@@ -671,8 +671,60 @@ app.get(
   "/seller/dashboard",
   verifyToken,
   authorizeRole("seller"),
-  (req, res) => {
-    res.json({ message: "Welcome Seller" });
+  async(req, res) => {
+    try {
+    const sellerId = req.user._id;
+
+    // 📦 Total items listed
+    const totalItems = await HostItem.countDocuments({
+      userId: sellerId,
+    });
+
+    // 🛒 Total sold items
+    const soldItems = await Order.aggregate([
+      { $match: { sellerId: sellerId } },
+      { $group: { _id: null, total: { $sum: "$quantity" } } },
+    ]);
+
+    // 💰 Total earnings
+    const earnings = await Order.aggregate([
+      {
+        $match: {
+          sellerId: sellerId,
+          status: "delivered",
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$totalAmount" },
+        },
+      },
+    ]);
+
+    // 🚚 Shipping
+    const shipped = await Order.countDocuments({
+      sellerId: sellerId,
+      status: "shipped",
+    });
+
+    // 💵 Payouts
+    const payouts = await Payout.aggregate([
+      { $match: { sellerId: sellerId, status: "paid" } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]);
+
+    res.json({
+      totalItems,
+      soldItems: soldItems[0]?.total || 0,
+      earnings: earnings[0]?.total || 0,
+      shipped,
+      payouts: payouts[0]?.total || 0,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server Error" });
+  }
   },
 );
 
