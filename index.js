@@ -772,7 +772,7 @@ app.post("/web/user-register", async (req, res) => {
     });
   }
 });
- //    changes
+ //    changes in login route, abhi humne seller profile complete hone ka bhi check karwaya hai, taki agar seller profile complete nahi hua hai, toh frontend ko pata chal jaye ki profile complete karna baki hai, aur uske according frontend me action le sake, jaise ki profile complete karne ka prompt dikhana ya dashboard me limited access dena, ye change humne seller login route me kiya hai, taki jab bhi seller login kare toh uska profile complete hai ya nahi ye pata chal jaye, aur uske accordingly frontend me usko guide kiya jaye
 //============================== LOGIN and LOGOUT ROUTE's ==================================================
 app.post("/login", async (req, res) => {
   try {
