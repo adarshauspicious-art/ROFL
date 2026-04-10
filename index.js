@@ -82,7 +82,4 @@ mongoose
   .then(() => console.log("MongoDB is Connected  🚀"))
   .catch((err) => console.log(err));
 
-// ================= START SERVER =================
-app.listen(PORT, () => {
-  console.log(`ROFL Server running on port ${PORT} 🚀`);
-});
+
